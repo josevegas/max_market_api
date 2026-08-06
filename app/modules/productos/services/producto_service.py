@@ -10,6 +10,7 @@ from app.modules.productos.models.producto import Producto
 class ProductoService(CRUDService[Producto]):
     modelo = Producto
     entidad = "Producto"
+    campos_unicos = {"sku": None, "codigo_barras": None}
 
     async def obtener_por_sku(self, sku: str) -> Producto:
         """El SKU es el identificador con el que trabaja el negocio, así que

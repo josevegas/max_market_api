@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 
+    #: Orígenes que pueden llamar a la API desde el navegador, separados por
+    #: coma. El navegador bloquea cualquier otro: en producción hay que poner
+    #: el dominio real, nunca "*" si se envían credenciales.
+    CORS_ORIGINS: str = "http://localhost:4300,http://127.0.0.1:4300"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
     @property
     def database_url_sync(self) -> str:
         """La misma URL con driver síncrono.

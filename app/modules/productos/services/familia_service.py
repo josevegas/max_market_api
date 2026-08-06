@@ -7,3 +7,4 @@ from app.modules.productos.models.familia import Familia
 class FamiliaService(CRUDService[Familia]):
     modelo = Familia
     entidad = "Familia"
+    campos_unicos = {"nombre": None, "codigo": None}

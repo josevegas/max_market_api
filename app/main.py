@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -24,6 +25,17 @@ app = FastAPI(
     description="API de consumo para el software de Max Market.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# El navegador bloquea las llamadas del frontend si el origen no está
+# declarado acá. Va antes de montar el router para que también cubra las
+# respuestas de error y las peticiones preflight (OPTIONS).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)

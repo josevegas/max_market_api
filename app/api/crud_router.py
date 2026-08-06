@@ -77,24 +77,25 @@ def crear_router_crud(
             filtros=aplicados,
         )
 
-    # Los filtros se agregan a la firma después de declarar el handler: así la
-    # lista es dinámica pero FastAPI los ve como query params normales y los
-    # documenta en el OpenAPI.
-    if nombres_filtros:
-        import inspect
+    # La firma se reescribe siempre, tenga filtros o no: hay que quitar el
+    # `**kwargs` o FastAPI lo toma por un query param llamado "kwargs" y exige
+    # que venga en la URL (422 en todos los listados sin filtros).
+    import inspect
 
-        firma = inspect.signature(listar)
-        parametros = [p for p in firma.parameters.values() if p.name != "kwargs"]
-        parametros += [
-            inspect.Parameter(
-                nombre,
-                inspect.Parameter.KEYWORD_ONLY,
-                default=Query(None, description=f"Filtrar por {nombre}"),
-                annotation=tipo | None,
-            )
-            for nombre, tipo in (filtros or {}).items()
-        ]
-        listar.__signature__ = firma.replace(parameters=parametros)
+    firma = inspect.signature(listar)
+    parametros = [p for p in firma.parameters.values() if p.name != "kwargs"]
+    # Los filtros se agregan acá para que FastAPI los vea como query params
+    # normales y los documente en el OpenAPI.
+    parametros += [
+        inspect.Parameter(
+            nombre,
+            inspect.Parameter.KEYWORD_ONLY,
+            default=Query(None, description=f"Filtrar por {nombre}"),
+            annotation=tipo | None,
+        )
+        for nombre, tipo in (filtros or {}).items()
+    ]
+    listar.__signature__ = firma.replace(parameters=parametros)
 
     @router.get(
         "/{registro_id}",

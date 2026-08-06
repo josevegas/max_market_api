@@ -7,3 +7,4 @@ from app.modules.productos.models.categoria import Categoria
 class CategoriaService(CRUDService[Categoria]):
     modelo = Categoria
     entidad = "Categoría"
+    campos_unicos = {"nombre": "sub_familia_id", "codigo": None}

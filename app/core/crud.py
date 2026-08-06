@@ -15,7 +15,7 @@ from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -35,6 +35,13 @@ class CRUDService(Generic[ModeloT]):
 
     modelo: type[ModeloT]
     entidad: str
+
+    #: Campos que no se pueden repetir, con el ámbito en el que aplican:
+    #: `{"nombre": "familia_id"}` = el nombre es único dentro de cada familia;
+    #: `{"codigo": None}` = el código es único en toda la tabla.
+    #: El texto se compara sin distinguir mayúsculas ni espacios al borde, que
+    #: es como lo entiende quien carga el catálogo.
+    campos_unicos: dict[str, str | None] = {}
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -67,7 +74,9 @@ class CRUDService(Generic[ModeloT]):
     # ── Escritura ───────────────────────────────────────────────────────────
 
     async def crear(self, datos: BaseModel, usuario_id: UUID | None = None) -> ModeloT:
-        registro = self.modelo(**datos.model_dump(), created_by=usuario_id)
+        valores = datos.model_dump()
+        await self._validar_unicidad(valores)
+        registro = self.modelo(**valores, created_by=usuario_id)
         self.db.add(registro)
         await self._guardar(registro)
         return registro
@@ -78,13 +87,65 @@ class CRUDService(Generic[ModeloT]):
         registro = await self.obtener(registro_id)
         # `exclude_unset`: un PATCH solo toca lo que el cliente mandó; sin esto
         # los campos omitidos se sobrescribirían con None.
-        for campo, valor in datos.model_dump(exclude_unset=True).items():
+        cambios = datos.model_dump(exclude_unset=True)
+
+        # Al editar hay que mirar el registro completo, no solo lo que llega:
+        # cambiar el padre puede volver duplicado un nombre que no lo era.
+        estado = {campo: getattr(registro, campo) for campo in self._campos_a_revisar()}
+        estado.update(cambios)
+        await self._validar_unicidad(estado, excluir_id=registro.id)
+
+        for campo, valor in cambios.items():
             setattr(registro, campo, valor)
         registro.updated_by = usuario_id
         await self._guardar(registro)
         return registro
 
-    async def desactivar(self, registro_id: UUID, usuario_id: UUID | None = None) -> ModeloT:
+    # ── Unicidad ────────────────────────────────────────────────────────────
+
+    def _campos_a_revisar(self) -> set[str]:
+        campos = set(self.campos_unicos)
+        campos.update(a for a in self.campos_unicos.values() if a)
+        return campos
+
+    async def _validar_unicidad(
+        self, valores: dict[str, Any], excluir_id: UUID | None = None
+    ) -> None:
+        """Rechaza el alta o la edición si ya existe un registro igual.
+
+        La garantía real son los índices únicos de la BD (dos peticiones a la
+        vez pasarían las dos por acá); esta comprobación existe para devolver
+        un 409 que diga qué campo está repetido, en vez de un error de
+        integridad genérico.
+        """
+        for campo, ambito in self.campos_unicos.items():
+            valor = valores.get(campo)
+            if valor is None or (isinstance(valor, str) and not valor.strip()):
+                continue  # Los opcionales vacíos no compiten entre sí.
+
+            columna = getattr(self.modelo, campo)
+            condiciones = [
+                func.lower(func.trim(columna)) == str(valor).strip().lower()
+                if isinstance(valor, str)
+                else columna == valor
+            ]
+            if ambito:
+                condiciones.append(getattr(self.modelo, ambito) == valores.get(ambito))
+            if excluir_id is not None:
+                condiciones.append(self.modelo.id != excluir_id)
+
+            existe = (
+                await self.db.execute(select(self.modelo.id).where(*condiciones).limit(1))
+            ).first()
+            if existe:
+                donde = " en el mismo ámbito" if ambito else ""
+                raise ConflictoError(
+                    f"Ya existe {self.entidad} con {campo} '{valor}'{donde}."
+                )
+
+    async def desactivar(
+        self, registro_id: UUID, usuario_id: UUID | None = None
+    ) -> ModeloT:
         """Baja lógica: la fila queda, deja de listarse."""
         registro = await self.obtener(registro_id)
         registro.is_active = False
