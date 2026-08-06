@@ -29,6 +29,19 @@ app = FastAPI(
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
+@app.get("/", tags=["Infraestructura"], include_in_schema=False)
+async def raiz() -> dict[str, str]:
+    """Orientación mínima: sin esto, entrar por la raíz devuelve un 404 seco
+    que parece que la API no levantó."""
+    return {
+        "app": settings.APP_NAME,
+        "version": app.version,
+        "documentacion": "/docs",
+        "api": settings.API_V1_PREFIX,
+        "salud": "/salud",
+    }
+
+
 @app.get("/salud", tags=["Infraestructura"])
 async def salud() -> dict[str, str]:
     """Chequeo de vida, sin tocar la base de datos."""
