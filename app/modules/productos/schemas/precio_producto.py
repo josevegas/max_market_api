@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.modules.productos.schemas.base import RespuestaBase
+from app.shareds.base import RespuestaBase
 
 
 class PrecioProductoCreate(BaseModel):

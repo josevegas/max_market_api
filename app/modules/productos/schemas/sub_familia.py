@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.modules.productos.schemas.base import RespuestaBase
+from app.shareds.base import RespuestaBase
 
 
 class SubFamiliaCreate(BaseModel):

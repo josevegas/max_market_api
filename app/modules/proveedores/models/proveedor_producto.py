@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import AuditMixin
 from app.modules.productos.models.producto import Producto
-from app.modules.proveedores.models.proveedor import Proveedor
+from app.modules.proveedores.models.empresa import Proveedor
 
 
 class ProveedorProducto(Base, AuditMixin):
@@ -19,9 +19,9 @@ class ProveedorProducto(Base, AuditMixin):
         default=uuid.uuid4,
         server_default=text("gen_random_uuid()"),
     )
-    proveedor_id: Mapped[uuid.UUID] = mapped_column(
+    empresa_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("proveedores.id", ondelete="CASCADE"),
+        ForeignKey("empresas.id", ondelete="CASCADE"),
         nullable=False,
     )
     producto_id: Mapped[uuid.UUID] = mapped_column(

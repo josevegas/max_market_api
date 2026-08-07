@@ -71,6 +71,7 @@ class Producto(Base, AuditMixin):
     sku: Mapped[str] = mapped_column(
         String(15), nullable=False, unique=True, index=True
     )
+    codigo_sunat: Mapped[str | None] = mapped_column(String(8), nullable=True)
     codigo_barras: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     categoria: Mapped[Categoria] = relationship("Categoria", back_populates="productos")
