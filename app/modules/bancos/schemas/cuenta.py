@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel
 
-from app.shareds.base import RespuestaBase
+from app.shared.base import RespuestaBase
 
 
 class CuentaCreate(BaseModel):
@@ -16,11 +16,11 @@ class CuentaCreate(BaseModel):
 
 
 class CuentaUpdate(BaseModel):
-    numero_cuenta: str
-    banco_id: uuid.UUID
-    empresa_id: uuid.UUID
-    tipo_cuenta_id: uuid.UUID
-    moneda: str
+    numero_cuenta: str | None
+    banco_id: uuid.UUID | None
+    empresa_id: uuid.UUID | None
+    tipo_cuenta_id: uuid.UUID | None
+    moneda: str | None
 
 
 class CuentaResponse(RespuestaBase):

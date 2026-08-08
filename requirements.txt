@@ -17,3 +17,6 @@ httpx==0.27.2
 
 # psycopg2
 psycopg2-binary
+
+# Cliente HTTP síncrono para la API externa de RUC
+requests==2.34.2

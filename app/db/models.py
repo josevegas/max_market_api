@@ -11,6 +11,9 @@ from app.db.base import Base
 from app.modules.bancos.models.banco import Banco
 from app.modules.bancos.models.cuenta import Cuenta
 from app.modules.bancos.models.tipo_cuenta import TipoCuenta
+from app.modules.markets.models.market import Market
+from app.modules.markets.models.sede import Sede
+from app.modules.markets.models.zona import Zona
 from app.modules.productos.models.categoria import Categoria
 from app.modules.productos.models.familia import Familia
 from app.modules.productos.models.precio_producto import PrecioProducto
@@ -28,11 +31,14 @@ __all__ = [
     "Cuenta",
     "Empresa",
     "Familia",
+    "Market",
     "PrecioProducto",
     "Presentacion",
     "Producto",
     "ProveedorProducto",
+    "Sede",
     "SubCategoria",
     "SubFamilia",
     "TipoCuenta",
+    "Zona",
 ]

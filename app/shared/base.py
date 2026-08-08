@@ -1,4 +1,4 @@
-"""Piezas comunes a los schemas del módulo."""
+"""Piezas comunes a los schemas de todos los módulos."""
 
 from __future__ import annotations
 

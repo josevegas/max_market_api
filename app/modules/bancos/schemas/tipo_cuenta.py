@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from app.shareds.base import RespuestaBase
+from app.shared.base import RespuestaBase
 
 
 class TipoCuentaCreate(BaseModel):
@@ -11,8 +11,8 @@ class TipoCuentaCreate(BaseModel):
 
 
 class TipoCuentaUpdate(BaseModel):
-    descripcion: str
-    codigo: str
+    descripcion: str | None
+    codigo: str | None
 
 
 class TipoCuentaResponse(RespuestaBase):

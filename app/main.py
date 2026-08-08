@@ -9,6 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+
+# Carga el registro central de modelos al arrancar. SQLAlchemy resuelve las
+# relaciones por nombre de clase, así que si un modelo no está importado, la
+# primera consulta que lo referencie falla con "failed to locate a name".
+# Hasta ahora solo lo importaba Alembic.
+from app.db import models  # noqa: F401
 from app.db.session import engine
 
 

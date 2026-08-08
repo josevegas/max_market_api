@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.modules.productos.models.presentacion import Presentacion
     from app.modules.productos.models.sub_categoria import SubCategoria
     from app.modules.productos.models.sub_familia import SubFamilia
+    from app.modules.proveedores.models.proveedor_producto import ProveedorProducto
 
 
 class Producto(Base, AuditMixin):
@@ -92,4 +93,9 @@ class Producto(Base, AuditMixin):
         back_populates="producto",
         cascade="all, delete-orphan",
         order_by="PrecioProducto.fecha_inicio",
+    )
+
+    #: Empresas que lo proveen.
+    proveedores: Mapped[list[ProveedorProducto]] = relationship(
+        "ProveedorProducto", back_populates="producto", cascade="all, delete-orphan"
     )

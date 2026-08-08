@@ -15,6 +15,10 @@ from app.modules.productos.api.sub_categoria_router import (
     router as sub_categorias_router,
 )
 from app.modules.productos.api.sub_familia_router import router as sub_familias_router
+from app.modules.proveedores.api.empresa_router import router as empresas_router
+from app.modules.proveedores.api.proveedor_producto_router import (
+    router as proveedor_productos_router,
+)
 
 api_router = APIRouter()
 
@@ -26,3 +30,5 @@ api_router.include_router(sub_categorias_router)
 api_router.include_router(presentaciones_router)
 api_router.include_router(productos_router)
 api_router.include_router(precios_router)
+api_router.include_router(empresas_router)
+api_router.include_router(proveedor_productos_router)

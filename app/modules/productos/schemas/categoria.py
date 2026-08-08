@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.shareds.base import RespuestaBase
+from app.shared.base import RespuestaBase
 
 
 class CategoriaCreate(BaseModel):

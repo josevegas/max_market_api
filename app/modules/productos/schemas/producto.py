@@ -4,7 +4,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from app.shareds.base import RespuestaBase
+from app.shared.base import RespuestaBase
 
 
 class ProductoCreate(BaseModel):
@@ -22,9 +22,11 @@ class ProductoCreate(BaseModel):
     familia_id: uuid.UUID
     sub_familia_id: uuid.UUID
     categoria_id: uuid.UUID
-    #: Opcionales, igual que en el modelo.
+    #: Opcional, igual que en el modelo.
     sub_categoria_id: uuid.UUID | None = None
-    presentacion_id: uuid.UUID | None = None
+    #: Obligatoria: la columna es NOT NULL. Sin esto el fallo llega como un
+    #: 400 de integridad en vez de un 422 que diga qué campo falta.
+    presentacion_id: uuid.UUID
 
 
 class ProductoUpdate(BaseModel):
@@ -55,3 +57,4 @@ class ProductoResponse(RespuestaBase):
     categoria_id: uuid.UUID
     sub_categoria_id: uuid.UUID | None = None
     presentacion_id: uuid.UUID | None = None
+    codigo_sunat: str | None = None

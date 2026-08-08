@@ -30,6 +30,20 @@ from app.db.base import Base
 ModeloT = TypeVar("ModeloT", bound=Base)
 
 
+def _sqlstate(exc: Exception) -> str | None:
+    """Código SQLSTATE del error, mirando la cadena de excepciones.
+
+    SQLAlchemy envuelve el error del driver, y el driver envuelve el de
+    PostgreSQL: el código puede estar en cualquiera de los tres.
+    """
+    candidatos = (getattr(exc, "orig", None), getattr(getattr(exc, "orig", None), "__cause__", None), exc)
+    for candidato in candidatos:
+        codigo = getattr(candidato, "sqlstate", None) or getattr(candidato, "pgcode", None)
+        if codigo:
+            return str(codigo)
+    return None
+
+
 class CRUDService(Generic[ModeloT]):
     """Operaciones comunes sobre un modelo."""
 
@@ -171,14 +185,22 @@ class CRUDService(Generic[ModeloT]):
                 await self.db.refresh(registro)
         except IntegrityError as exc:
             await self.db.rollback()
-            detalle = str(getattr(exc, "orig", exc))
-            if "duplicate key" in detalle or "unique" in detalle.lower():
+            # Se mira el SQLSTATE, no el texto del error: PostgreSQL traduce
+            # los mensajes al idioma del servidor ("llave foránea" en un
+            # servidor en español), así que buscar "foreign key" no encuentra
+            # nada. El código, en cambio, es siempre el mismo.
+            codigo = _sqlstate(exc)
+            if codigo == "23505":  # unique_violation
                 raise ConflictoError(
                     f"Ya existe un registro de {self.entidad} con esos datos únicos."
                 ) from exc
-            if "foreign key" in detalle.lower():
+            if codigo == "23503":  # foreign_key_violation
                 raise ReferenciaInvalidaError(
                     "Alguna de las referencias enviadas no existe."
+                ) from exc
+            if codigo in ("23502", "23514"):  # not_null / check_violation
+                raise ReferenciaInvalidaError(
+                    "Los datos enviados no cumplen una restricción de la base."
                 ) from exc
             raise
 

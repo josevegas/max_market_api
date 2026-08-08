@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.shareds.base import RespuestaBase
+from app.shared.base import RespuestaBase
 
 
 class PresentacionCreate(BaseModel):

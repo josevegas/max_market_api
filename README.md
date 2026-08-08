@@ -52,6 +52,29 @@ Dos cosas que hay que respetar para que `--autogenerate` funcione:
 2. **La URL de la base sale del `.env`**, no de `alembic.ini` — ese archivo se
    versiona y no debe llevar credenciales.
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest                    # toda la suite
+pytest tests/test_catalogo.py -v
+```
+
+Corren contra una base **real** (`maxmarket_test_db`), que se crea y se migra
+sola en la primera ejecución: así las migraciones quedan verificadas en cada
+corrida. Cada test arranca con las tablas vacías.
+
+| Archivo | Qué cubre |
+|---|---|
+| `test_infraestructura.py` | La app levanta y el OpenAPI se genera |
+| `test_catalogo.py` | CRUD, jerarquía, filtros, baja lógica, precios |
+| `test_unicidad.py` | Duplicados: servicio e índices de la base |
+| `test_empresas.py` | Consulta de RUC (proveedor externo simulado) y CRUD |
+| `test_contrato_frontend.py` | CORS, forma de respuestas y errores, rutas |
+
+La API externa de RUC **se simula**: un test no debe depender de que un tercero
+esté arriba ni gastar cuota de la cuenta.
+
 ## Variables de entorno
 
 | Variable         | Para qué                                              |

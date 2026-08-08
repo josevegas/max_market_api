@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from app.shareds.base import RespuestaBase
+from app.shared.base import RespuestaBase
 
 
 class BancoCreate(BaseModel):
@@ -14,8 +14,8 @@ class BancoCreate(BaseModel):
 
 
 class BancoUpdate(BaseModel):
-    razon_social: str
-    ruc: str
+    razon_social: str | None
+    ruc: str | None
     direccion: str | None
     telefono: str | None
     codigo: str | None

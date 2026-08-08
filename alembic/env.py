@@ -46,10 +46,24 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _incluir_objeto(objeto, nombre, tipo_, reflejado, comparado_con) -> bool:
+    """Deja fuera del autogenerado los índices únicos `uq_*`.
+
+    Son índices funcionales (`lower(trim(...))`) y parciales, creados con SQL
+    en sus migraciones y no declarados en `Base.metadata`. Sin esta exclusión,
+    `--autogenerate` los ve como sobrantes y **propone borrarlos**: ya pasó una
+    vez y dejó el catálogo sin protección contra duplicados.
+    """
+    if tipo_ == "index" and (nombre or "").startswith("uq_"):
+        return False
+    return True
+
+
 def _ejecutar_migraciones(connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
+        include_object=_incluir_objeto,
         # Detecta también los cambios de tipo de columna, que por defecto
         # pasan desapercibidos al autogenerar.
         compare_type=True,
