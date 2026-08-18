@@ -15,6 +15,7 @@ Revises: 4f67736b1867
 Create Date: 2026-08-06 23:30:00.000000
 
 """
+
 from collections.abc import Sequence
 
 from alembic import op
@@ -34,7 +35,12 @@ INDICES = [
         "familia_id, lower(trim(nombre))",
         None,
     ),
-    ("uq_sub_familias_codigo", "sub_familias", "lower(trim(codigo))", "codigo IS NOT NULL"),
+    (
+        "uq_sub_familias_codigo",
+        "sub_familias",
+        "lower(trim(codigo))",
+        "codigo IS NOT NULL",
+    ),
     (
         "uq_categorias_sub_familia_nombre",
         "categorias",
@@ -54,7 +60,12 @@ INDICES = [
         "lower(trim(codigo))",
         "codigo IS NOT NULL",
     ),
-    ("uq_presentaciones_descripcion", "presentaciones", "lower(trim(descripcion))", None),
+    (
+        "uq_presentaciones_descripcion",
+        "presentaciones",
+        "lower(trim(descripcion))",
+        None,
+    ),
     (
         "uq_presentaciones_codigo",
         "presentaciones",

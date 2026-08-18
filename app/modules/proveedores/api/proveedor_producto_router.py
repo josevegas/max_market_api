@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.crud_router import a_http
@@ -25,19 +25,31 @@ from app.modules.proveedores.schemas.proveedor_producto import (
 from app.modules.proveedores.services.proveedor_producto_service import (
     ProveedorProductoService,
 )
+from app.shared.paginacion import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, Pagina
 
 router = APIRouter(tags=["Productos del proveedor"])
 
 
 @router.get(
     "/empresas/{empresa_id}/productos",
-    response_model=list[ProductoDelProveedor],
+    response_model=Pagina[ProductoDelProveedor],
     summary="Productos que distribuye un proveedor",
     description="Ordenados por tiempo de atención: primero lo que llega antes.",
 )
-async def productos_del_proveedor(empresa_id: UUID, db: AsyncSession = Depends(get_db)):
+async def productos_del_proveedor(
+    empresa_id: UUID,
+    limite: int = Query(LIMITE_POR_DEFECTO, ge=1, le=LIMITE_MAXIMO),
+    desplazamiento: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
     try:
-        return await ProveedorProductoService(db).productos_de(empresa_id)
+        svc = ProveedorProductoService(db)
+        return Pagina(
+            items=await svc.productos_de(empresa_id, limite, desplazamiento),
+            total=await svc.contar_productos_de(empresa_id),
+            limite=limite,
+            desplazamiento=desplazamiento,
+        )
     except ErrorDeDominio as e:
         raise a_http(e)
 
@@ -108,7 +120,7 @@ async def quitar_producto(
 
 @router.get(
     "/productos/{producto_id}/proveedores",
-    response_model=list[ProveedorDelProducto],
+    response_model=Pagina[ProveedorDelProducto],
     summary="Proveedores de un producto",
     description=(
         "Del más rápido al más lento. Es la consulta que hace Compras antes de "
@@ -116,10 +128,19 @@ async def quitar_producto(
     ),
 )
 async def proveedores_del_producto(
-    producto_id: UUID, db: AsyncSession = Depends(get_db)
+    producto_id: UUID,
+    limite: int = Query(LIMITE_POR_DEFECTO, ge=1, le=LIMITE_MAXIMO),
+    desplazamiento: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await ProveedorProductoService(db).proveedores_de(producto_id)
+        svc = ProveedorProductoService(db)
+        return Pagina(
+            items=await svc.proveedores_de(producto_id, limite, desplazamiento),
+            total=await svc.contar_proveedores_de(producto_id),
+            limite=limite,
+            desplazamiento=desplazamiento,
+        )
     except ErrorDeDominio as e:
         raise a_http(e)
 

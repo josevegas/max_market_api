@@ -18,7 +18,10 @@ class Market(Base, AuditMixin):
         server_default=text("gen_random_uuid()"),
     )
     sede_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("sedes.id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True),
+        ForeignKey("sedes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     nombre: Mapped[str] = mapped_column(String(50), nullable=False)
     codigo: Mapped[str] = mapped_column(String(10), nullable=False)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.crud_router import a_http, crear_router_crud
@@ -16,6 +16,7 @@ from app.modules.productos.schemas.producto import (
 )
 from app.modules.productos.services.precio_producto_service import PrecioProductoService
 from app.modules.productos.services.producto_service import ProductoService
+from app.shared.paginacion import LIMITE_MAXIMO, LIMITE_POR_DEFECTO, Pagina
 
 router = crear_router_crud(
     prefijo="/productos",
@@ -55,16 +56,32 @@ async def obtener_por_sku(sku: str, db: AsyncSession = Depends(get_db)):
 
 @router.get(
     "/{producto_id}/precios",
-    response_model=list[PrecioProductoResponse],
+    response_model=Pagina[PrecioProductoResponse],
     summary="Historial de precios del producto",
 )
-async def precios_del_producto(producto_id: UUID, db: AsyncSession = Depends(get_db)):
+async def precios_del_producto(
+    producto_id: UUID,
+    limite: int = Query(LIMITE_POR_DEFECTO, ge=1, le=LIMITE_MAXIMO),
+    desplazamiento: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
     try:
         await ProductoService(db).obtener(producto_id)  # 404 si no existe
     except NoEncontradoError as e:
         raise a_http(e)
-    return await PrecioProductoService(db).listar(
-        solo_activos=False, filtros={"producto_id": producto_id}, limite=500
+    # `solo_activos=False`: el historial incluye los precios ya vencidos.
+    svc = PrecioProductoService(db)
+    filtros = {"producto_id": producto_id}
+    return Pagina(
+        items=await svc.listar(
+            solo_activos=False,
+            filtros=filtros,
+            limite=limite,
+            desplazamiento=desplazamiento,
+        ),
+        total=await svc.contar(solo_activos=False, filtros=filtros),
+        limite=limite,
+        desplazamiento=desplazamiento,
     )
 
 
@@ -80,5 +97,7 @@ async def precio_vigente(producto_id: UUID, db: AsyncSession = Depends(get_db)):
         raise a_http(e)
     precio = await PrecioProductoService(db).vigente(producto_id)
     if precio is None:
-        raise HTTPException(status_code=404, detail="El producto no tiene precio vigente.")
+        raise HTTPException(
+            status_code=404, detail="El producto no tiene precio vigente."
+        )
     return precio

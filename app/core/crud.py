@@ -11,7 +11,7 @@ por productos y borrarlos de verdad rompería el histórico.
 
 from __future__ import annotations
 
-from typing import Any, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -36,9 +36,15 @@ def _sqlstate(exc: Exception) -> str | None:
     SQLAlchemy envuelve el error del driver, y el driver envuelve el de
     PostgreSQL: el código puede estar en cualquiera de los tres.
     """
-    candidatos = (getattr(exc, "orig", None), getattr(getattr(exc, "orig", None), "__cause__", None), exc)
+    candidatos = (
+        getattr(exc, "orig", None),
+        getattr(getattr(exc, "orig", None), "__cause__", None),
+        exc,
+    )
     for candidato in candidatos:
-        codigo = getattr(candidato, "sqlstate", None) or getattr(candidato, "pgcode", None)
+        codigo = getattr(candidato, "sqlstate", None) or getattr(
+            candidato, "pgcode", None
+        )
         if codigo:
             return str(codigo)
     return None
@@ -55,12 +61,28 @@ class CRUDService(Generic[ModeloT]):
     #: `{"codigo": None}` = el código es único en toda la tabla.
     #: El texto se compara sin distinguir mayúsculas ni espacios al borde, que
     #: es como lo entiende quien carga el catálogo.
-    campos_unicos: dict[str, str | None] = {}
+    campos_unicos: ClassVar[dict[str, str | None]] = {}
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     # ── Lectura ─────────────────────────────────────────────────────────────
+
+    def _con_filtros(
+        self, consulta, solo_activos: bool, filtros: dict[str, Any] | None
+    ):
+        """Las condiciones comunes al listado y al conteo.
+
+        Viven en un solo sitio a propósito: si el `total` se calculara con un
+        filtro distinto del de los `items`, la paginación mostraría un número
+        de páginas que no corresponde con lo que devuelve.
+        """
+        if solo_activos:
+            consulta = consulta.where(self.modelo.is_active.is_(True))
+        for columna, valor in (filtros or {}).items():
+            if valor is not None:
+                consulta = consulta.where(getattr(self.modelo, columna) == valor)
+        return consulta
 
     async def listar(
         self,
@@ -70,14 +92,21 @@ class CRUDService(Generic[ModeloT]):
         desplazamiento: int = 0,
         filtros: dict[str, Any] | None = None,
     ) -> list[ModeloT]:
-        consulta = select(self.modelo)
-        if solo_activos:
-            consulta = consulta.where(self.modelo.is_active.is_(True))
-        for columna, valor in (filtros or {}).items():
-            if valor is not None:
-                consulta = consulta.where(getattr(self.modelo, columna) == valor)
+        consulta = self._con_filtros(select(self.modelo), solo_activos, filtros)
         consulta = consulta.limit(limite).offset(desplazamiento)
         return list((await self.db.execute(consulta)).scalars().all())
+
+    async def contar(
+        self,
+        *,
+        solo_activos: bool = True,
+        filtros: dict[str, Any] | None = None,
+    ) -> int:
+        """Cuántos registros cumplen el filtro, sin trocear."""
+        consulta = self._con_filtros(
+            select(func.count()).select_from(self.modelo), solo_activos, filtros
+        )
+        return await self.db.scalar(consulta) or 0
 
     async def obtener(self, registro_id: UUID) -> ModeloT:
         registro = await self.db.get(self.modelo, registro_id)
@@ -149,7 +178,9 @@ class CRUDService(Generic[ModeloT]):
                 condiciones.append(self.modelo.id != excluir_id)
 
             existe = (
-                await self.db.execute(select(self.modelo.id).where(*condiciones).limit(1))
+                await self.db.execute(
+                    select(self.modelo.id).where(*condiciones).limit(1)
+                )
             ).first()
             if existe:
                 donde = " en el mismo ámbito" if ambito else ""

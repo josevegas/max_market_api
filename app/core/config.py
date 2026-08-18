@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,9 +18,39 @@ class Settings(BaseSettings):
     # ── Base de datos ───────────────────────────────────────────────────────
     DATABASE_URL: str
 
-    # ── API externa (api.json.pe: consultas RUC/DNI) ────────────────────────
-    URL_API: str = ""
-    API_JSON_TOKEN: str = ""
+    # ── API externa de consulta de RUC (decolecta) ──────────────────────────
+    #: URL **base**, sin query string: el número se manda como parámetro
+    #: (`?numero=...`), no concatenado. Se aceptan los nombres antiguos
+    #: (`URL_API`, `API_JSON_TOKEN`) para no romper los `.env` que ya existen.
+    URL_API_RUC: str = Field(
+        default="https://api.decolecta.com/v1/sunat/ruc",
+        validation_alias=AliasChoices("URL_API_RUC", "URL_API"),
+    )
+    API_RUC_TOKEN: str = Field(
+        default="",
+        validation_alias=AliasChoices("API_RUC_TOKEN", "API_JSON_TOKEN"),
+    )
+
+    @field_validator("URL_API_RUC")
+    @classmethod
+    def _url_base(cls, v: str) -> str:
+        """Descarta la query string que llevaba la forma anterior.
+
+        Antes la URL terminaba en `?numero=` porque el RUC se pegaba a mano.
+        Ahora va como parámetro, así que un `.env` sin actualizar seguiría
+        funcionando en vez de pedir `...ruc?numero=?numero=20552103816`.
+        """
+        return v.split("?")[0].rstrip("/")
+
+    # ── Padrones de agentes de retención/percepción (SUNAT) ─────────────────
+    #: ZIP con un TXT separado por "|". Son públicos y no piden token, por eso
+    #: llevan valor por defecto: sin `.env` la sincronización igual funciona.
+    URL_PADRON_RETENCION: str = (
+        "https://ww1.sunat.gob.pe/descarga/AgentRet/AgenRet_TXT.zip"
+    )
+    URL_PADRON_PERCEPCION: str = (
+        "https://ww1.sunat.gob.pe/descarga/AgentRet/AgenPercVI_TXT.zip"
+    )
 
     # ── Aplicación ──────────────────────────────────────────────────────────
     APP_NAME: str = "Max Market API"

@@ -2,21 +2,26 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.shared.base import RespuestaBase
+from app.shared.base import RespuestaBase, rechazar_nulos
 
 
 class MarketCreate(BaseModel):
     sede_id: uuid.UUID
-    nombre: str
-    codigo: str
+    nombre: str = Field(min_length=1, max_length=50)
+    codigo: str = Field(min_length=1, max_length=10)
 
 
 class MarketUpdate(BaseModel):
-    sede_id: uuid.UUID | None
-    nombre: str | None
-    codigo: str | None
+    """Actualización parcial: todo opcional (ver `ZonaUpdate`)."""
+
+    sede_id: uuid.UUID | None = None
+    nombre: str | None = Field(default=None, min_length=1, max_length=50)
+    codigo: str | None = Field(default=None, min_length=1, max_length=10)
+
+    # Columnas NOT NULL: omitirlas es válido, mandarlas como null no.
+    _no_nulos = rechazar_nulos("sede_id", "nombre", "codigo")
 
 
 class MarketResponse(RespuestaBase):

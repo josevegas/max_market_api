@@ -1,13 +1,17 @@
-"""Servicio de empresas, con la consulta de RUC contra api.json.pe.
+"""Servicio de empresas, con la consulta de RUC contra decolecta.
 
 La consulta externa sirve para dar de alta una empresa sin teclear la razón
 social ni la dirección: se pide el RUC y el resto llega de SUNAT.
+
+La condición de agente de retención/percepción **no** sale de acá: el
+proveedor solo informa retención y nunca percepción, así que ese dato viene
+del padrón oficial (`PadronAgentesService`).
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, ClassVar
 
 import requests
 
@@ -30,20 +34,22 @@ class ServicioExternoError(ErrorDeDominio):
 
 
 class ConsultaRucService:
-    """Cliente de `POST {URL_API}ruc` de api.json.pe.
+    """Cliente de `GET {URL_API_RUC}?numero={ruc}` de decolecta.
 
-    La URL y el token salen del `.env` (`URL_API` y `API_JSON_TOKEN`): nunca
-    van en el código, que se versiona.
+    La URL y el token salen del `.env` (`URL_API_RUC` y `API_RUC_TOKEN`):
+    nunca van en el código, que se versiona.
     """
 
     def __init__(self) -> None:
-        self.url = settings.URL_API.rstrip("/") + "/ruc"
-        self.token = settings.API_JSON_TOKEN
+        self.url = settings.URL_API_RUC
+        self.token = settings.API_RUC_TOKEN
 
     def _consultar_sincrono(self, ruc: str) -> dict[str, Any]:
-        respuesta = requests.post(
+        # El RUC va como parámetro y no concatenado: así la URL configurada es
+        # una base normal y `requests` se encarga de escaparlo.
+        respuesta = requests.get(
             self.url,
-            json={"ruc": ruc},
+            params={"numero": ruc},
             headers={
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json",
@@ -54,7 +60,7 @@ class ConsultaRucService:
             raise NoEncontradoError("RUC", ruc)
         if respuesta.status_code in (401, 403):
             raise ServicioExternoError(
-                "La API de RUC rechazó el token (revisar API_JSON_TOKEN en el .env)."
+                "La API de RUC rechazó el token (revisar API_RUC_TOKEN en el .env)."
             )
         if not respuesta.ok:
             raise ServicioExternoError(
@@ -77,9 +83,9 @@ class ConsultaRucService:
         ruc = (ruc or "").strip()
         if not ruc.isdigit() or len(ruc) != LARGO_RUC:
             raise ValueError(f"El RUC debe tener {LARGO_RUC} dígitos numéricos.")
-        if not self.token or not settings.URL_API:
+        if not self.token or not self.url:
             raise ServicioExternoError(
-                "Falta configurar URL_API y API_JSON_TOKEN en el .env."
+                "Falta configurar URL_API_RUC y API_RUC_TOKEN en el .env."
             )
 
         try:
@@ -95,7 +101,7 @@ class ConsultaRucService:
 class EmpresaService(CRUDService[Empresa]):
     modelo = Empresa
     entidad = "Empresa"
-    campos_unicos = {"ruc": None}
+    campos_unicos: ClassVar[dict[str, str | None]] = {"ruc": None}
 
     def __init__(self, db) -> None:  # type: ignore[no-untyped-def]
         super().__init__(db)
@@ -117,7 +123,16 @@ class EmpresaService(CRUDService[Empresa]):
             raise ConflictoError(f"Ya existe una empresa con el RUC {ruc}.")
 
         datos = await self.consultar_ruc(ruc)
-        if not datos.get("ubigeo_sunat"):
+        # La condición de agente sale del padrón oficial de SUNAT, no del
+        # proveedor de consultas: decolecta solo informa retención y nunca
+        # percepción. Si el padrón no se ha sincronizado la empresa queda como
+        # no agente, y la próxima corrida del job la corrige.
+        from app.modules.proveedores.services.padron_agentes import (
+            PadronAgentesService,
+        )
+
+        es_ret, es_perc = await PadronAgentesService(self.db).es_agente(ruc)
+        if not datos.get("ubigeo"):
             # La columna es obligatoria: sin ubigeo el INSERT fallaría con un
             # error de integridad en vez de un mensaje útil.
             raise ServicioExternoError(
@@ -127,12 +142,12 @@ class EmpresaService(CRUDService[Empresa]):
         return await self.crear(
             EmpresaCreate(
                 razon_social=datos["razon_social"],
-                ruc=datos["ruc"],
-                ubigeo_sunat=datos["ubigeo_sunat"],
-                direccion=datos.get("direccion_completa"),
+                ruc=datos["numero_documento"],
+                ubigeo_sunat=datos["ubigeo"],
+                direccion=self._direccion_completa(datos),
                 es_proveedor=es_proveedor,
-                es_ag_retencion=self._es_si(datos.get("es_agente_de_retencion")),
-                es_ag_percepcion=self._es_si(datos.get("es_agente_de_percepcion")),
+                es_ag_retencion=es_ret,
+                es_ag_percepcion=es_perc,
                 estado=datos.get("estado"),
             )
         )
@@ -146,13 +161,16 @@ class EmpresaService(CRUDService[Empresa]):
 
     @staticmethod
     def _normalizar(ruc: str, datos: dict[str, Any]) -> dict[str, Any]:
-        """Aplana la respuesta de la API a los campos que usa `Empresa`.
+        """Aplana la respuesta del proveedor a los campos que usa `Empresa`.
 
-        El proveedor no garantiza una forma fija (a veces envuelve el resultado
-        en `data`), así que se busca por varios nombres posibles en lugar de
-        confiar en uno solo. Los indicadores de agente vienen como "SI"/"NO",
-        no como booleanos: se conservan tal cual en la respuesta y se
-        convierten al crear la empresa.
+        Los nombres primeros son los de decolecta; los siguientes son los que
+        usaba api.json.pe y los que suelen aparecer en proveedores parecidos.
+        Mantenerlos cuesta nada y evita que un cambio de nombre deje el campo
+        en `None` sin que nadie se entere.
+
+        La condición de agente **no** sale de acá: decolecta solo informa
+        retención (y como booleano), nunca percepción. Ese dato viene del
+        padrón oficial, ver `PadronAgentesService`.
         """
         cuerpo = datos.get("data") if isinstance(datos.get("data"), dict) else datos
 
@@ -164,23 +182,40 @@ class EmpresaService(CRUDService[Empresa]):
             return None
 
         return {
-            "ruc": primero("ruc", "numeroDocumento") or ruc,
+            "numero_documento": primero("numero_documento", "ruc", "numeroDocumento")
+            or ruc,
             "razon_social": primero(
-                "nombre_o_razon_social", "razon_social", "razonSocial", "nombre"
+                "razon_social", "nombre_o_razon_social", "razonSocial", "nombre"
             )
             or "",
-            "direccion_completa": primero(
-                "direccion_completa", "direccion", "domicilio_fiscal"
-            ),
-            "ubigeo_sunat": primero("ubigeo_sunat", "ubigeo"),
-            "es_agente_de_retencion": primero("es_agente_de_retencion"),
-            "es_agente_de_percepcion": primero("es_agente_de_percepcion"),
+            "direccion": primero("direccion", "direccion_completa", "domicilio_fiscal"),
+            "distrito": primero("distrito"),
+            "provincia": primero("provincia"),
+            "departamento": primero("departamento"),
+            "ubigeo": primero("ubigeo", "ubigeo_sunat"),
             "estado": primero("estado", "estado_contribuyente"),
             "condicion": primero("condicion", "condicion_domicilio"),
             "crudo": cuerpo,
         }
 
-    @staticmethod
-    def _es_si(valor: str | None) -> bool:
-        """SUNAT responde "SI"/"NO" en los indicadores de agente."""
-        return (valor or "").strip().upper() == "SI"
+    #: La columna `direccion` es String(255): una dirección compuesta muy larga
+    #: haría fallar la validación en medio de un alta que por lo demás es
+    #: correcta, así que se recorta.
+    LARGO_DIRECCION = 255
+
+    @classmethod
+    def _direccion_completa(cls, datos: dict[str, Any]) -> str | None:
+        """Une calle, distrito, provincia y departamento en una sola línea.
+
+        Se saltan las partes que el proveedor no devuelva: concatenarlas a pelo
+        revienta con `TypeError` en cuanto una viene vacía, que es lo normal en
+        los RUC con domicilio incompleto.
+        """
+        partes = (
+            datos.get("direccion"),
+            datos.get("distrito"),
+            datos.get("provincia"),
+            datos.get("departamento"),
+        )
+        limpias = [p.strip() for p in partes if isinstance(p, str) and p.strip()]
+        return ", ".join(limpias)[: cls.LARGO_DIRECCION] or None

@@ -86,6 +86,30 @@ class Producto(Base, AuditMixin):
     sub_familia: Mapped[SubFamilia] = relationship(
         "SubFamilia", back_populates="productos"
     )
+    #: `nullable=True`, no `"true"`: la cadena no vacía es *truthy*, así que
+    #: acertaba por accidente. Escrito así el `Mapped[str | None]` y la columna
+    #: dicen lo mismo, que es lo que el schema ya daba por opcional.
+    marca_fabricante: Mapped[str | None] = mapped_column(String(25), nullable=True)
+    #: En qué unidad se compra y en cuál se vende: el proveedor factura cajas y
+    #: el market vende unidades, y sin las dos no se sabe contra qué convertir.
+    unidad_compra: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        # RESTRICT como el resto del catálogo del producto: con CASCADE, borrar
+        # una unidad de medida se llevaba por delante los productos que la
+        # usan, y con ellos su histórico de precios y de stock.
+        ForeignKey("unidades_medida.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    unidad_venta: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        # RESTRICT como el resto del catálogo del producto: con CASCADE, borrar
+        # una unidad de medida se llevaba por delante los productos que la
+        # usan, y con ellos su histórico de precios y de stock.
+        ForeignKey("unidades_medida.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     #: Historial de precios. `delete-orphan`: un precio sin producto no
     #: significa nada, a diferencia del catálogo, que sí es independiente.
     precios: Mapped[list[PrecioProducto]] = relationship(

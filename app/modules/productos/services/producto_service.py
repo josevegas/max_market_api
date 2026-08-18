@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import ClassVar
+
 from sqlalchemy import select
 
 from app.core.crud import CRUDService
@@ -10,7 +12,10 @@ from app.modules.productos.models.producto import Producto
 class ProductoService(CRUDService[Producto]):
     modelo = Producto
     entidad = "Producto"
-    campos_unicos = {"sku": None, "codigo_barras": None}
+    campos_unicos: ClassVar[dict[str, str | None]] = {
+        "sku": None,
+        "codigo_barras": None,
+    }
 
     async def obtener_por_sku(self, sku: str) -> Producto:
         """El SKU es el identificador con el que trabaja el negocio, así que

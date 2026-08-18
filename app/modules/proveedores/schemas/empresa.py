@@ -73,12 +73,13 @@ class ConsultaRucResponse(BaseModel):
     respuesta no tiene una forma fija y ahí queda todo lo que no se mapeó.
     """
 
-    ruc: str
+    numero_documento: str
     razon_social: str
-    direccion_completa: str | None = None
-    ubigeo_sunat: str | None = None
-    es_agente_de_retencion: str | None = None
-    es_agente_de_percepcion: str | None = None
+    direccion: str | None = None
+    distrito: str | None = None
+    provincia: str | None = None
+    departamento: str | None = None
+    ubigeo: str | None = None
     estado: str | None = None
     condicion: str | None = None
     crudo: dict = Field(default_factory=dict)

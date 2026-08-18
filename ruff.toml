@@ -1,0 +1,65 @@
+# Configuración de ruff (linter + formatter).
+#
+# El conjunto de reglas va escrito acá a propósito. Sin este archivo ruff usa
+# sus valores por defecto, que cambian entre versiones: el mismo código pasaba
+# ayer y falla hoy sin que nadie lo haya tocado.
+
+target-version = "py312"
+line-length = 88
+
+exclude = [".venv", "__pycache__", ".ruff_cache"]
+
+[lint]
+select = [
+    "F",      # pyflakes: errores reales (nombres sin definir, imports sin usar)
+    "E",      # pycodestyle
+    "W",      # pycodestyle: warnings
+    "I",      # isort: orden de imports
+    "UP",     # pyupgrade: sintaxis moderna
+    "B",      # bugbear: trampas comunes
+    "C4",     # comprehensions
+    "SIM",    # simplificaciones
+    "DTZ",    # fechas sin huso horario
+    "ASYNC",  # llamadas bloqueantes dentro de corrutinas
+    "RUF",    # reglas propias de ruff
+]
+
+ignore = [
+    # El formatter decide dónde parte las líneas. Tenerlo también como regla
+    # de lint hace que ambos se peleen por el mismo código, y sobre lo único
+    # que el formatter no puede partir (cadenas y comentarios largos) el aviso
+    # es puro ruido.
+    "E501",
+    # `raise X from e` dentro de un `except`. La regla es buena y conserva la
+    # cadena de excepciones, pero hoy hay 20 casos en los routers. Merece su
+    # propia pasada: al activarla, corregir y quitar esta línea.
+    "B904",
+    # Genéricos PEP 695 (`class Servicio[T]`). Es solo sintaxis y afecta a
+    # `CRUDService`, la clase de la que cuelga todo el CRUD; no vale el riesgo
+    # a cambio de nada funcional.
+    "UP046",
+]
+
+[lint.flake8-bugbear]
+# FastAPI declara las dependencias como valor por defecto del parámetro y las
+# intercepta antes de que Python las evalúe, así que B008 es un falso positivo
+# en todos los routers. `crud_router.py` además arma las firmas en runtime con
+# `inspect.Parameter`, donde `Annotated` no sería práctico.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.File",
+    "fastapi.Form",
+]
+
+[lint.per-file-ignores]
+# El `import *` de `app.db.models` es deliberado: carga todos los modelos para
+# que `--autogenerate` los vea. Nombrarlos uno a uno significaría acordarse de
+# actualizar la lista cada vez, que es justo lo que ese módulo evita.
+"alembic/env.py" = ["F403"]
+# Las migraciones las genera Alembic con su propia plantilla; reordenarles los
+# imports o exigirles estilo no aporta y ensucia el historial.
+"alembic/versions/*" = ["E501", "I001", "UP"]

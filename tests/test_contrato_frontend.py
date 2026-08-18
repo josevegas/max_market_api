@@ -48,7 +48,9 @@ async def test_las_respuestas_llevan_la_cabecera_de_origen(cliente):
 
 
 async def test_un_origen_ajeno_no_recibe_permiso(cliente):
-    r = await cliente.get(f"{BASE}/familias", headers={"Origin": "http://ajeno.example"})
+    r = await cliente.get(
+        f"{BASE}/familias", headers={"Origin": "http://ajeno.example"}
+    )
 
     # Sin la cabecera, el navegador descarta la respuesta.
     assert "access-control-allow-origin" not in r.headers
@@ -58,7 +60,9 @@ async def test_un_origen_ajeno_no_recibe_permiso(cliente):
 
 
 async def test_campos_de_familia(cliente):
-    creada = (await cliente.post(f"{BASE}/familias", json={"nombre": "Abarrotes"})).json()
+    creada = (
+        await cliente.post(f"{BASE}/familias", json={"nombre": "Abarrotes"})
+    ).json()
 
     assert set(creada) == AUDITORIA | {"nombre", "codigo"}
 
@@ -109,6 +113,9 @@ async def test_campos_de_producto(cliente, catalogo):
         "categoria_id",
         "sub_categoria_id",
         "presentacion_id",
+        "marca_fabricante",
+        "unidad_compra",
+        "unidad_venta",
     }
 
 
@@ -128,7 +135,9 @@ async def test_los_importes_viajan_como_texto(cliente, catalogo):
         },
     )
 
-    precio = (await cliente.get(f"{BASE}/productos/{producto['id']}/precio-vigente")).json()
+    precio = (
+        await cliente.get(f"{BASE}/productos/{producto['id']}/precio-vigente")
+    ).json()
 
     assert precio["precio_venta"] == "15.90"
     assert isinstance(precio["precio_venta"], str)
@@ -137,15 +146,50 @@ async def test_los_importes_viajan_como_texto(cliente, catalogo):
 # ===================== Listados =====================
 
 
-async def test_los_listados_devuelven_un_array_plano(cliente):
-    """El frontend hace `items.set(res)` directamente: si esto pasara a ser un
-    objeto paginado, todas las tablas quedarían vacías."""
+async def test_los_listados_vienen_paginados(cliente):
+    """El frontend lee `items` y usa `total` para el paginador.
+
+    Este test decía lo contrario —que la respuesta era un array plano— porque
+    ese era el contrato anterior. Se cambió a propósito: sin `total`, quien
+    recibía 50 filas no podía distinguir «esto es todo» de «hay más», y las
+    tablas pedían `limite=500` por si acaso.
+    """
     await cliente.post(f"{BASE}/familias", json={"nombre": "Abarrotes"})
 
     cuerpo = (await cliente.get(f"{BASE}/familias")).json()
 
-    assert isinstance(cuerpo, list)
-    assert isinstance(cuerpo[0], dict)
+    assert set(cuerpo) == {"items", "total", "limite", "desplazamiento"}
+    assert isinstance(cuerpo["items"], list)
+    assert isinstance(cuerpo["items"][0], dict)
+    assert cuerpo["total"] == 1
+
+
+async def test_el_total_cuenta_mas_alla_de_la_pagina(cliente):
+    """Es lo que permite pintar el paginador sin adivinar cuántas páginas hay."""
+    for i in range(5):
+        await cliente.post(f"{BASE}/familias", json={"nombre": f"Familia {i}"})
+
+    cuerpo = (await cliente.get(f"{BASE}/familias", params={"limite": 2})).json()
+
+    assert len(cuerpo["items"]) == 2
+    assert cuerpo["total"] == 5
+    assert cuerpo["limite"] == 2
+    assert cuerpo["desplazamiento"] == 0
+
+
+async def test_el_desplazamiento_avanza_de_pagina(cliente):
+    for i in range(5):
+        await cliente.post(f"{BASE}/familias", json={"nombre": f"Familia {i}"})
+
+    primera = (await cliente.get(f"{BASE}/familias", params={"limite": 2})).json()
+    tercera = (
+        await cliente.get(f"{BASE}/familias", params={"limite": 2, "desplazamiento": 4})
+    ).json()
+
+    assert len(tercera["items"]) == 1, "la última página va incompleta"
+    assert tercera["total"] == 5
+    ids_primera = {f["id"] for f in primera["items"]}
+    assert not ids_primera & {f["id"] for f in tercera["items"]}
 
 
 async def test_los_parametros_de_listado_que_usa_el_frontend(cliente, catalogo):

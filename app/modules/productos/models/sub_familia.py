@@ -30,6 +30,7 @@ class SubFamilia(Base, AuditMixin):
         PGUUID(as_uuid=True),
         ForeignKey("familias.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
 
     familia: Mapped[Familia] = relationship("Familia", back_populates="sub_familias")

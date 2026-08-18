@@ -50,12 +50,18 @@ async def test_asignar_un_producto(cliente, proveedor, producto):
     assert r.json()["empresa_id"] == proveedor
 
 
-async def test_reasignar_actualiza_el_tiempo_en_vez_de_fallar(cliente, proveedor, producto):
+async def test_reasignar_actualiza_el_tiempo_en_vez_de_fallar(
+    cliente, proveedor, producto
+):
     """Volver a asignar algo que ya se distribuye es corregir el plazo, no un
     error: quien mantiene el catálogo no tiene que consultar antes."""
     url = f"{BASE}/empresas/{proveedor}/productos/{producto}"
-    primera = await cliente.put(url, json={"producto_id": producto, "tiempo_atencion": 5})
-    segunda = await cliente.put(url, json={"producto_id": producto, "tiempo_atencion": 2})
+    primera = await cliente.put(
+        url, json={"producto_id": producto, "tiempo_atencion": 5}
+    )
+    segunda = await cliente.put(
+        url, json={"producto_id": producto, "tiempo_atencion": 2}
+    )
 
     assert segunda.status_code == 200
     assert segunda.json()["tiempo_atencion"] == 2
@@ -153,7 +159,9 @@ async def test_asignar_varios_de_una_vez(cliente, proveedor, catalogo):
     assert len(r.json()) == 2
 
 
-async def test_si_un_producto_no_existe_no_se_guarda_ninguno(cliente, proveedor, producto):
+async def test_si_un_producto_no_existe_no_se_guarda_ninguno(
+    cliente, proveedor, producto
+):
     """La carga no debe quedar a medias."""
     r = await cliente.post(
         f"{BASE}/empresas/{proveedor}/productos",
@@ -169,7 +177,7 @@ async def test_si_un_producto_no_existe_no_se_guarda_ninguno(cliente, proveedor,
     catalogo_proveedor = (
         await cliente.get(f"{BASE}/empresas/{proveedor}/productos")
     ).json()
-    assert catalogo_proveedor == []
+    assert catalogo_proveedor["items"] == []
 
 
 async def test_lista_vacia_es_422(cliente, proveedor):
@@ -183,7 +191,9 @@ async def test_lista_vacia_es_422(cliente, proveedor):
 # ===================== Consultas =====================
 
 
-async def test_catalogo_del_proveedor_resuelve_el_producto(cliente, proveedor, producto):
+async def test_catalogo_del_proveedor_resuelve_el_producto(
+    cliente, proveedor, producto
+):
     """Devuelve SKU y descripción: quien lo consulta necesita leerlo, no
     cruzar ids a mano."""
     await cliente.put(
@@ -194,13 +204,15 @@ async def test_catalogo_del_proveedor_resuelve_el_producto(cliente, proveedor, p
     r = await cliente.get(f"{BASE}/empresas/{proveedor}/productos")
 
     assert r.status_code == 200
-    fila = r.json()[0]
+    fila = r.json()["items"][0]
     assert fila["sku"] == "ARR-EXT-5K"
     assert fila["descripcion_corta"] == "Arroz extra 5kg"
     assert fila["tiempo_atencion"] == 4
 
 
-async def test_el_catalogo_se_ordena_por_tiempo_de_atencion(cliente, proveedor, catalogo):
+async def test_el_catalogo_se_ordena_por_tiempo_de_atencion(
+    cliente, proveedor, catalogo
+):
     lento = (
         await cliente.post(
             f"{BASE}/productos", json=producto_valido(catalogo, sku="LENTO")
@@ -222,7 +234,7 @@ async def test_el_catalogo_se_ordena_por_tiempo_de_atencion(cliente, proveedor, 
 
     r = await cliente.get(f"{BASE}/empresas/{proveedor}/productos")
 
-    assert [f["sku"] for f in r.json()] == ["RAPIDO", "LENTO"]
+    assert [f["sku"] for f in r.json()["items"]] == ["RAPIDO", "LENTO"]
 
 
 async def test_proveedores_de_un_producto_del_mas_rapido_al_mas_lento(
@@ -252,11 +264,11 @@ async def test_proveedores_de_un_producto_del_mas_rapido_al_mas_lento(
     r = await cliente.get(f"{BASE}/productos/{producto}/proveedores")
 
     assert r.status_code == 200
-    assert [p["razon_social"] for p in r.json()] == [
+    assert [p["razon_social"] for p in r.json()["items"]] == [
         "Mayorista Express",
         "Distribuidora Andina",
     ]
-    assert r.json()[0]["tiempo_atencion"] == 3
+    assert r.json()["items"][0]["tiempo_atencion"] == 3
 
 
 async def test_proveedor_mas_rapido(cliente, producto, proveedor):
@@ -291,7 +303,9 @@ async def test_quitar_del_catalogo_es_baja_logica(cliente, proveedor, producto):
 
     assert r.status_code == 200
     assert r.json()["is_active"] is False
-    assert (await cliente.get(f"{BASE}/empresas/{proveedor}/productos")).json() == []
+    assert (await cliente.get(f"{BASE}/empresas/{proveedor}/productos")).json()[
+        "items"
+    ] == []
 
 
 async def test_reasignar_despues_de_la_baja_lo_reactiva(cliente, proveedor, producto):

@@ -27,6 +27,11 @@ from app.core.exceptions import (
     NoEncontradoError,
     ReferenciaInvalidaError,
 )
+from app.shared.paginacion import (
+    LIMITE_MAXIMO,
+    LIMITE_POR_DEFECTO,
+    Pagina,
+)
 
 _CODIGOS = {
     NoEncontradoError: status.HTTP_404_NOT_FOUND,
@@ -61,20 +66,36 @@ def crear_router_crud(
     router = APIRouter(prefix=prefijo, tags=[etiqueta])
     nombres_filtros = list((filtros or {}).keys())
 
-    @router.get("", response_model=list[schema_response], summary=f"Listar {etiqueta.lower()}")
+    @router.get(
+        "",
+        response_model=Pagina[schema_response],
+        summary=f"Listar {etiqueta.lower()}",
+        description=(
+            "Devuelve un tramo del listado junto con el `total` de registros "
+            "que cumplen el filtro, para poder paginar sin adivinar cuántos hay."
+        ),
+    )
     async def listar(
         solo_activos: bool = Query(True, description="Excluye los dados de baja"),
-        limite: int = Query(100, ge=1, le=500),
+        limite: int = Query(LIMITE_POR_DEFECTO, ge=1, le=LIMITE_MAXIMO),
         desplazamiento: int = Query(0, ge=0),
         db: AsyncSession = Depends(get_db),
         **kwargs: Any,
     ):
         aplicados = {n: kwargs.get(n) for n in nombres_filtros}
-        return await servicio(db).listar(
-            solo_activos=solo_activos,
+        svc = servicio(db)
+        # El conteo va con el mismo filtro que los items: si divergieran, el
+        # cliente pintaría un número de páginas que no existe.
+        return Pagina(
+            items=await svc.listar(
+                solo_activos=solo_activos,
+                limite=limite,
+                desplazamiento=desplazamiento,
+                filtros=aplicados,
+            ),
+            total=await svc.contar(solo_activos=solo_activos, filtros=aplicados),
             limite=limite,
             desplazamiento=desplazamiento,
-            filtros=aplicados,
         )
 
     # La firma se reescribe siempre, tenga filtros o no: hay que quitar el
@@ -145,7 +166,10 @@ def crear_router_crud(
     async def desactivar(registro_id: UUID, db: AsyncSession = Depends(get_db)):
         try:
             return await servicio(db).desactivar(registro_id)
-        except NoEncontradoError as e:
+        # No solo `NoEncontradoError`: una baja puede chocar con una regla de
+        # negocio (dar de baja una línea de guía que ya tiene lotes), y sin
+        # capturarla el error de dominio se escapaba como un 500.
+        except (NoEncontradoError, ConflictoError, ReferenciaInvalidaError) as e:
             raise a_http(e)
 
     return router

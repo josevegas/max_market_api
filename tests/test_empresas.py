@@ -1,6 +1,6 @@
 """Tests de empresas y de la consulta de RUC.
 
-La API externa (api.json.pe) se simula: un test no debe depender de que un
+La API externa (decolecta) se simula: un test no debe depender de que un
 tercero esté arriba, ni gastar cuota de la cuenta, ni cambiar de resultado
 porque SUNAT actualizó un dato.
 """
@@ -13,25 +13,28 @@ import pytest
 
 BASE = "/api/v1"
 
-#: Respuesta real de api.json.pe para el RUC 20552103816, recortada a lo que
-#: se usa. Sirve de contrato: si el proveedor cambia estos nombres, los tests
-#: lo notan antes que producción.
+#: Respuesta **real** de decolecta para el RUC 20552103816, capturada tal cual.
+#: Sirve de contrato: si el proveedor cambia estos nombres, los tests lo notan
+#: antes que producción.
 RESPUESTA_SUNAT = {
-    "ruc": "20552103816",
-    "nombre_o_razon_social": "AGROLIGHT PERU S.A.C.",
-    "direccion": "PJ. JORGE BASADRE NRO. 158",
-    "direccion_completa": "PJ. JORGE BASADRE NRO. 158 URB. POP LA UNIVERSAL",
-    "ubigeo_sunat": "150137",
-    "estado": "ACTIVO",
+    "razon_social": "AGROLIGHT PERU S.A.C.",
+    "numero_documento": "20552103816",
+    "estado": "SUSPENSION TEMPORAL",
     "condicion": "HABIDO",
-    "es_agente_de_retencion": "NO",
-    "es_agente_de_percepcion": "SI",
+    "direccion": "PJ. JORGE BASADRE NRO 158 URB. POP LA UNIVERSAL 2DA ET. ",
+    "ubigeo": "150137",
+    "distrito": "SANTA ANITA",
+    "provincia": "LIMA",
     "departamento": "LIMA",
+    # Booleano, no "SI"/"NO". Y no hay equivalente para percepción: por eso la
+    # condición de agente se resuelve contra el padrón, no acá.
+    "es_agente_retencion": False,
+    "es_buen_contribuyente": True,
 }
 
 
 class RespuestaFalsa:
-    """Imita lo que `requests.post` devuelve, con lo que usa el servicio."""
+    """Imita lo que `requests.get` devuelve, con lo que usa el servicio."""
 
     def __init__(self, cuerpo=None, status_code: int = 200) -> None:
         self._cuerpo = cuerpo if cuerpo is not None else RESPUESTA_SUNAT
@@ -48,7 +51,7 @@ class RespuestaFalsa:
 def simular_sunat(cuerpo=None, status_code: int = 200):
     """Reemplaza la llamada HTTP del servicio por una respuesta fija."""
     return patch(
-        "app.modules.proveedores.services.empresa_service.requests.post",
+        "app.modules.proveedores.services.empresa_service.requests.get",
         return_value=RespuestaFalsa(cuerpo, status_code),
     )
 
@@ -63,20 +66,28 @@ async def test_consultar_ruc_normaliza_la_respuesta(cliente):
     assert r.status_code == 200
     cuerpo = r.json()
     assert cuerpo["razon_social"] == "AGROLIGHT PERU S.A.C."
-    assert cuerpo["ubigeo_sunat"] == "150137"
-    assert cuerpo["direccion_completa"].startswith("PJ. JORGE BASADRE")
+    assert cuerpo["numero_documento"] == "20552103816"
+    assert cuerpo["ubigeo"] == "150137"
+    assert cuerpo["direccion"].startswith("PJ. JORGE BASADRE")
     # Se conserva la respuesta completa: el proveedor no garantiza una forma
-    # fija y ahí queda lo que no se mapeó.
+    # fija y ahí queda lo que no se mapeó (el desglose de dirección, los
+    # indicadores de buen contribuyente...).
     assert cuerpo["crudo"]["departamento"] == "LIMA"
+    assert cuerpo["crudo"]["es_buen_contribuyente"] is True
 
 
-async def test_consultar_ruc_envia_el_token_y_el_cuerpo_esperados(cliente):
-    """El contrato con el proveedor: POST con `{"ruc": ...}` y Bearer."""
+async def test_consultar_ruc_envia_el_numero_como_parametro(cliente):
+    """El contrato con decolecta: GET con `?numero=` y Bearer.
+
+    El RUC va en `params` y no concatenado a la URL: así el setting es una URL
+    base normal y `requests` se encarga de escaparlo.
+    """
     with simular_sunat() as falso:
         await cliente.get(f"{BASE}/empresas/ruc/20552103816")
 
-    _, kwargs = falso.call_args
-    assert kwargs["json"] == {"ruc": "20552103816"}
+    args, kwargs = falso.call_args
+    assert kwargs["params"] == {"numero": "20552103816"}
+    assert "?" not in args[0], "la URL configurada no debe llevar query string"
     assert kwargs["headers"]["Authorization"].startswith("Bearer ")
     # Sin timeout, un cuelgue del proveedor deja la petición colgada.
     assert kwargs["timeout"] > 0
@@ -111,7 +122,7 @@ async def test_timeout_del_proveedor_es_502(cliente):
     import requests
 
     with patch(
-        "app.modules.proveedores.services.empresa_service.requests.post",
+        "app.modules.proveedores.services.empresa_service.requests.get",
         side_effect=requests.Timeout(),
     ):
         r = await cliente.get(f"{BASE}/empresas/ruc/20552103816")
@@ -129,19 +140,46 @@ async def test_crear_desde_ruc_mapea_los_datos(cliente):
     assert r.status_code == 201
     empresa = r.json()
     assert empresa["razon_social"] == "AGROLIGHT PERU S.A.C."
+    # En la tabla la columna se llama `ubigeo_sunat`; el proveedor la manda
+    # como `ubigeo`. El mapeo ocurre en `_normalizar`.
     assert empresa["ubigeo_sunat"] == "150137"
-    assert empresa["estado"] == "ACTIVO"
+    assert empresa["estado"] == "SUSPENSION TEMPORAL"
+    assert empresa["direccion"].startswith("PJ. JORGE BASADRE")
     assert empresa["es_proveedor"] is True
 
 
-async def test_los_indicadores_si_no_se_vuelven_booleanos(cliente):
-    """SUNAT responde "SI"/"NO", no booleanos."""
+async def test_la_condicion_de_agente_sale_del_padron_no_de_la_api(cliente):
+    """El indicador de api.json.pe ya no decide: manda el padrón de SUNAT.
+
+    La respuesta simulada trae `es_agente_de_percepcion: "SI"`, pero con el
+    padrón vacío la empresa se registra como no agente. La siguiente
+    sincronización la corrige.
+    """
     with simular_sunat():
         r = await cliente.post(f"{BASE}/empresas/desde-ruc/20552103816")
 
     empresa = r.json()
-    assert empresa["es_ag_retencion"] is False  # venía "NO"
-    assert empresa["es_ag_percepcion"] is True  # venía "SI"
+    assert empresa["es_ag_retencion"] is False
+    assert empresa["es_ag_percepcion"] is False
+
+
+async def test_si_el_ruc_esta_en_el_padron_se_registra_como_agente(cliente):
+    from app.db.session import AsyncSessionLocal
+    from app.modules.proveedores.models.padron_agente import (
+        TIPO_RETENCION,
+        PadronAgente,
+    )
+
+    async with AsyncSessionLocal() as db:
+        db.add(PadronAgente(ruc="20552103816", tipo=TIPO_RETENCION))
+        await db.commit()
+
+    with simular_sunat():
+        r = await cliente.post(f"{BASE}/empresas/desde-ruc/20552103816")
+
+    empresa = r.json()
+    assert empresa["es_ag_retencion"] is True
+    assert empresa["es_ag_percepcion"] is False
 
 
 async def test_alta_repetida_es_409_sin_consultar_al_proveedor(cliente):
@@ -158,8 +196,8 @@ async def test_alta_repetida_es_409_sin_consultar_al_proveedor(cliente):
 
 async def test_sin_ubigeo_no_se_da_de_alta(cliente):
     """`ubigeo_sunat` es obligatorio en la tabla: mejor un mensaje claro que
-    un error de integridad."""
-    sin_ubigeo = {k: v for k, v in RESPUESTA_SUNAT.items() if k != "ubigeo_sunat"}
+    un error de integridad. El proveedor lo manda como `ubigeo`."""
+    sin_ubigeo = {k: v for k, v in RESPUESTA_SUNAT.items() if k != "ubigeo"}
 
     with simular_sunat(cuerpo=sin_ubigeo):
         r = await cliente.post(f"{BASE}/empresas/desde-ruc/20552103816")
@@ -194,7 +232,9 @@ async def test_ruc_duplicado_es_409(cliente):
     }
     await cliente.post(f"{BASE}/empresas", json=datos)
 
-    r = await cliente.post(f"{BASE}/empresas", json={**datos, "razon_social": "Empresa B"})
+    r = await cliente.post(
+        f"{BASE}/empresas", json={**datos, "razon_social": "Empresa B"}
+    )
 
     assert r.status_code == 409
 
@@ -203,13 +243,23 @@ async def test_filtrar_proveedores(cliente):
     base = {"ubigeo_sunat": "150137", "estado": "ACTIVO"}
     await cliente.post(
         f"{BASE}/empresas",
-        json={**base, "razon_social": "Proveedora", "ruc": "20111111111", "es_proveedor": True},
+        json={
+            **base,
+            "razon_social": "Proveedora",
+            "ruc": "20111111111",
+            "es_proveedor": True,
+        },
     )
     await cliente.post(
         f"{BASE}/empresas",
-        json={**base, "razon_social": "Cliente", "ruc": "20222222222", "es_proveedor": False},
+        json={
+            **base,
+            "razon_social": "Cliente",
+            "ruc": "20222222222",
+            "es_proveedor": False,
+        },
     )
 
     r = await cliente.get(f"{BASE}/empresas", params={"es_proveedor": True})
 
-    assert [e["razon_social"] for e in r.json()] == ["Proveedora"]
+    assert [e["razon_social"] for e in r.json()["items"]] == ["Proveedora"]

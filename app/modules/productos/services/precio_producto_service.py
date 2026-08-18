@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.crud import CRUDService
+from app.core.fechas import hoy_en_peru
 from app.modules.productos.models.precio_producto import PrecioProducto
 
 
@@ -21,7 +22,10 @@ class PrecioProductoService(CRUDService[PrecioProducto]):
         Un precio sin `fecha_fin` sigue vigente; entre varios solapados gana el
         de inicio más reciente, que es el último que se cargó.
         """
-        en_fecha = en_fecha or date.today()
+        # Contra el huso de Perú y no contra el reloj del servidor: si la app
+        # corre en UTC, `date.today()` adelanta el día a partir de las 19:00
+        # de Lima y daría por vigente un precio que aún no empieza.
+        en_fecha = en_fecha or hoy_en_peru()
         consulta = (
             select(PrecioProducto)
             .where(

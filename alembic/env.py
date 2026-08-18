@@ -54,9 +54,7 @@ def _incluir_objeto(objeto, nombre, tipo_, reflejado, comparado_con) -> bool:
     `--autogenerate` los ve como sobrantes y **propone borrarlos**: ya pasó una
     vez y dejó el catálogo sin protección contra duplicados.
     """
-    if tipo_ == "index" and (nombre or "").startswith("uq_"):
-        return False
-    return True
+    return not (tipo_ == "index" and (nombre or "").startswith("uq_"))
 
 
 def _ejecutar_migraciones(connection) -> None:

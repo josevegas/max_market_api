@@ -30,6 +30,7 @@ class SubCategoria(Base, AuditMixin):
         PGUUID(as_uuid=True),
         ForeignKey("categorias.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
 
     categoria: Mapped[Categoria] = relationship(

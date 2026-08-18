@@ -71,7 +71,9 @@ async def test_el_nombre_se_repite_bajo_otro_padre(cliente):
 
 
 async def test_el_nombre_no_se_repite_bajo_el_mismo_padre(cliente):
-    familia = (await cliente.post(f"{BASE}/familias", json={"nombre": "Familia"})).json()
+    familia = (
+        await cliente.post(f"{BASE}/familias", json={"nombre": "Familia"})
+    ).json()
     await cliente.post(
         f"{BASE}/sub-familias", json={"nombre": "Granos", "familia_id": familia["id"]}
     )
@@ -96,9 +98,13 @@ async def test_editar_hacia_un_duplicado_es_409(cliente):
 
 
 async def test_editar_sin_cambiar_el_nombre_no_choca_consigo_mismo(cliente):
-    familia = (await cliente.post(f"{BASE}/familias", json={"nombre": "Bebidas"})).json()
+    familia = (
+        await cliente.post(f"{BASE}/familias", json={"nombre": "Bebidas"})
+    ).json()
 
-    r = await cliente.patch(f"{BASE}/familias/{familia['id']}", json={"nombre": "Bebidas"})
+    r = await cliente.patch(
+        f"{BASE}/familias/{familia['id']}", json={"nombre": "Bebidas"}
+    )
 
     assert r.status_code == 200
 

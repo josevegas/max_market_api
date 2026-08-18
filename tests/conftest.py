@@ -18,9 +18,11 @@ import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+import httpx
 import pytest
 import pytest_asyncio
 from dotenv import dotenv_values
+from httpx import ASGITransport
 from sqlalchemy.engine import make_url
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -34,8 +36,10 @@ def _url_de_test() -> str:
     )
     if not cruda:
         raise RuntimeError("No se encontró DATABASE_URL en el .env ni en el entorno")
-    return make_url(cruda).set(database=NOMBRE_BD_TEST).render_as_string(
-        hide_password=False
+    return (
+        make_url(cruda)
+        .set(database=NOMBRE_BD_TEST)
+        .render_as_string(hide_password=False)
     )
 
 
@@ -45,6 +49,26 @@ URL_TEST = _url_de_test()
 os.environ["DATABASE_URL"] = URL_TEST
 
 TABLAS = [
+    "recepcion_detalle",
+    "recepcion",
+    "guia_remision_detalle",
+    "producto_lote",
+    "orden_compra_detalle",
+    "guia_remision",
+    "orden_compra",
+    "cotizacion_detalle",
+    "cotizaciones",
+    "pedido_detalle",
+    "pedidos",
+    "requerimiento_detalle",
+    "requerimientos",
+    "estados",
+    "producto_almacen",
+    "almacenes",
+    "tabla_equivalencia",
+    "unidades_medida",
+    "padron_agentes",
+    "padron_sincronizaciones",
     "proveedor_productos",
     "cuentas",
     "precio_producto",
@@ -110,28 +134,39 @@ def _preparar_bd() -> None:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _limpiar_tablas(_preparar_bd) -> AsyncGenerator[None, None]:
-    """Cada test arranca con la base vacía.
+    """Cada test arranca con la base vacía, salvo los estados canónicos.
 
     Se limpia ANTES de cada test y no después: así, si uno falla, sus datos
     quedan disponibles para inspeccionarlos.
+
+    `estados` se vuelve a sembrar tras el truncado porque la cadena de compras
+    los da por existentes: los siembra la migración, y sin ellos ningún test
+    podría pasar de un requerimiento a un pedido. Es el mismo estado en que
+    queda una base recién migrada.
     """
     from sqlalchemy import text
 
     from app.db.session import engine
+    from app.modules.movimientos.constantes import ESTADOS_CANONICOS
 
     async with engine.begin() as conexion:
         await conexion.execute(
             text("TRUNCATE TABLE " + ", ".join(TABLAS) + " RESTART IDENTITY CASCADE")
         )
+        await conexion.execute(
+            text("INSERT INTO estados (descripcion, codigo) VALUES (:d, :c)"),
+            [{"d": d, "c": c} for d, c in ESTADOS_CANONICOS],
+        )
     yield
 
 
 @pytest_asyncio.fixture
-async def cliente() -> AsyncGenerator[httpx.AsyncClient, None]:  # noqa: F821
+async def cliente() -> AsyncGenerator[httpx.AsyncClient, None]:
     """Cliente HTTP contra la app en memoria (sin levantar un servidor)."""
-    import httpx
-    from httpx import ASGITransport
-
+    # `app` se importa acá y no arriba: al importarse lee la configuración, y
+    # `DATABASE_URL` se fija más arriba en este mismo módulo. `httpx` no tiene
+    # esa restricción y va con el resto de imports, que además es lo que hace
+    # falta para poder anotar el tipo de retorno.
     from app.main import app
 
     async with httpx.AsyncClient(
@@ -186,12 +221,30 @@ async def catalogo(_limpiar_tablas, cliente) -> dict[str, str]:
             json={"descripcion": "Bolsa 5 kg", "codigo": "B5K"},
         )
     ).json()
+    # `unidad_compra` y `unidad_venta` son obligatorias al crear un producto,
+    # así que la jerarquía mínima ya no puede quedarse en el catálogo: sin una
+    # unidad de medida no se puede dar de alta ninguno. Se usa la misma para
+    # comprar y vender; el test que necesite distinguirlas crea la suya.
+    # El código es `UBASE` y no `UND` para no chocar con las unidades que
+    # crean por su cuenta los tests de movimientos y de equivalencias.
+    unidad = (
+        await cliente.post(
+            "/api/v1/unidades-medida",
+            json={
+                "descripcion": "Unidad base",
+                "codigo": "UBASE",
+                "factor_conversion": 1,
+            },
+        )
+    ).json()
     return {
         "familia_id": familia["id"],
         "sub_familia_id": sub_familia["id"],
         "categoria_id": categoria["id"],
         "sub_categoria_id": sub_categoria["id"],
         "presentacion_id": presentacion["id"],
+        "unidad_compra": unidad["id"],
+        "unidad_venta": unidad["id"],
     }
 
 

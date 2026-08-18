@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crud import CRUDService
@@ -123,11 +123,14 @@ class ProveedorProductoService(CRUDService[ProveedorProducto]):
             )
         ).scalar_one_or_none()
 
-    async def productos_de(self, empresa_id: UUID) -> list[dict]:
+    async def productos_de(
+        self, empresa_id: UUID, limite: int = 50, desplazamiento: int = 0
+    ) -> list[dict]:
         """Catálogo de un proveedor, con el producto ya resuelto.
 
         Se ordena por tiempo de atención: lo primero que se quiere ver es lo
-        que llega antes.
+        que llega antes. El catálogo de un mayorista puede ser largo, así
+        que va troceado como el resto de listados.
         """
         await self._validar_proveedor(empresa_id)
         filas = await self.db.execute(
@@ -144,6 +147,8 @@ class ProveedorProductoService(CRUDService[ProveedorProducto]):
                 ProveedorProducto.is_active.is_(True),
             )
             .order_by(ProveedorProducto.tiempo_atencion, Producto.sku)
+            .limit(limite)
+            .offset(desplazamiento)
         )
         return [
             {
@@ -156,7 +161,9 @@ class ProveedorProductoService(CRUDService[ProveedorProducto]):
             for id_, producto_id, sku, descripcion, tiempo in filas
         ]
 
-    async def proveedores_de(self, producto_id: UUID) -> list[dict]:
+    async def proveedores_de(
+        self, producto_id: UUID, limite: int = 50, desplazamiento: int = 0
+    ) -> list[dict]:
         """Quiénes proveen un producto, del más rápido al más lento.
 
         Es la consulta que hace Compras antes de emitir una orden.
@@ -177,6 +184,8 @@ class ProveedorProductoService(CRUDService[ProveedorProducto]):
                 Empresa.is_active.is_(True),
             )
             .order_by(ProveedorProducto.tiempo_atencion, Empresa.razon_social)
+            .limit(limite)
+            .offset(desplazamiento)
         )
         return [
             {
@@ -188,6 +197,34 @@ class ProveedorProductoService(CRUDService[ProveedorProducto]):
             }
             for id_, empresa_id, razon_social, ruc, tiempo in filas
         ]
+
+    async def contar_productos_de(self, empresa_id: UUID) -> int:
+        return (
+            await self.db.scalar(
+                select(func.count())
+                .select_from(ProveedorProducto)
+                .where(
+                    ProveedorProducto.empresa_id == empresa_id,
+                    ProveedorProducto.is_active.is_(True),
+                )
+            )
+            or 0
+        )
+
+    async def contar_proveedores_de(self, producto_id: UUID) -> int:
+        return (
+            await self.db.scalar(
+                select(func.count())
+                .select_from(ProveedorProducto)
+                .join(Empresa, Empresa.id == ProveedorProducto.empresa_id)
+                .where(
+                    ProveedorProducto.producto_id == producto_id,
+                    ProveedorProducto.is_active.is_(True),
+                    Empresa.is_active.is_(True),
+                )
+            )
+            or 0
+        )
 
     async def proveedor_mas_rapido(self, producto_id: UUID) -> dict | None:
         """El de menor tiempo de atención, o None si nadie lo provee."""

@@ -14,7 +14,9 @@ BASE = "/api/v1"
 
 async def test_crear_familia_devuelve_auditoria_del_servidor(cliente):
     """El cliente no manda `is_active` ni fechas: las pone el servidor."""
-    r = await cliente.post(f"{BASE}/familias", json={"nombre": "Bebidas", "codigo": "BEB"})
+    r = await cliente.post(
+        f"{BASE}/familias", json={"nombre": "Bebidas", "codigo": "BEB"}
+    )
 
     assert r.status_code == 201
     cuerpo = r.json()
@@ -36,7 +38,7 @@ async def test_crear_familia_ignora_auditoria_enviada_por_el_cliente(cliente):
 async def test_listar_vacio_devuelve_lista(cliente):
     r = await cliente.get(f"{BASE}/familias")
     assert r.status_code == 200
-    assert r.json() == []
+    assert r.json()["items"] == []
 
 
 async def test_obtener_por_id(cliente):
@@ -98,7 +100,7 @@ async def test_filtrar_por_padre(cliente, catalogo):
     )
 
     assert r.status_code == 200
-    assert [s["nombre"] for s in r.json()] == ["Granos"]
+    assert [s["nombre"] for s in r.json()["items"]] == ["Granos"]
 
 
 # ===================== Edición =====================
@@ -129,7 +131,9 @@ async def test_actualizar_inexistente_es_404(cliente):
 
 
 async def test_baja_logica_conserva_la_fila(cliente):
-    familia = (await cliente.post(f"{BASE}/familias", json={"nombre": "Temporal"})).json()
+    familia = (
+        await cliente.post(f"{BASE}/familias", json={"nombre": "Temporal"})
+    ).json()
 
     r = await cliente.delete(f"{BASE}/familias/{familia['id']}")
 
@@ -141,14 +145,18 @@ async def test_baja_logica_conserva_la_fila(cliente):
 
 
 async def test_los_inactivos_no_se_listan_por_defecto(cliente):
-    familia = (await cliente.post(f"{BASE}/familias", json={"nombre": "Temporal"})).json()
+    familia = (
+        await cliente.post(f"{BASE}/familias", json={"nombre": "Temporal"})
+    ).json()
     await cliente.delete(f"{BASE}/familias/{familia['id']}")
 
     activas = (await cliente.get(f"{BASE}/familias")).json()
-    todas = (await cliente.get(f"{BASE}/familias", params={"solo_activos": False})).json()
+    todas = (
+        await cliente.get(f"{BASE}/familias", params={"solo_activos": False})
+    ).json()
 
-    assert activas == []
-    assert len(todas) == 1
+    assert activas["items"] == []
+    assert todas["total"] == 1
 
 
 # ===================== Productos =====================
@@ -206,18 +214,16 @@ async def test_buscar_sku_inexistente_es_404(cliente):
 async def test_filtrar_productos_por_categoria(cliente, catalogo):
     await cliente.post(f"{BASE}/productos", json=producto_valido(catalogo))
 
-    conteo = len(
-        (
-            await cliente.get(
-                f"{BASE}/productos", params={"categoria_id": catalogo["categoria_id"]}
-            )
-        ).json()
-    )
-    sin_coincidencias = len(
-        (
-            await cliente.get(f"{BASE}/productos", params={"categoria_id": str(uuid4())})
-        ).json()
-    )
+    # Se lee `total` y no `len(items)`: el total refleja todo lo que cumple el
+    # filtro, aunque la página devuelta sea más corta.
+    conteo = (
+        await cliente.get(
+            f"{BASE}/productos", params={"categoria_id": catalogo["categoria_id"]}
+        )
+    ).json()["total"]
+    sin_coincidencias = (
+        await cliente.get(f"{BASE}/productos", params={"categoria_id": str(uuid4())})
+    ).json()["total"]
 
     assert conteo == 1
     assert sin_coincidencias == 0
@@ -312,4 +318,4 @@ async def test_historial_de_precios(cliente, catalogo):
     r = await cliente.get(f"{BASE}/productos/{producto['id']}/precios")
 
     assert r.status_code == 200
-    assert len(r.json()) == 2
+    assert len(r.json()["items"]) == 2
