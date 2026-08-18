@@ -127,6 +127,21 @@ class CRUDService(Generic[ModeloT]):
     async def actualizar(
         self, registro_id: UUID, datos: BaseModel, usuario_id: UUID | None = None
     ) -> ModeloT:
+        registro = await self._aplicar_cambios(registro_id, datos, usuario_id)
+        await self._guardar(registro)
+        return registro
+
+    async def _aplicar_cambios(
+        self, registro_id: UUID, datos: BaseModel, usuario_id: UUID | None = None
+    ) -> ModeloT:
+        """La edición sin el commit, para poder acompañarla de otros cambios.
+
+        Está separada de `actualizar` porque hay ediciones que arrastran más
+        escrituras y las dos cosas tienen que entrar juntas: aprobar un
+        documento genera el siguiente de la cadena (ver `generacion.py`). Con el
+        commit dentro no había forma de meterlas en la misma transacción, y un
+        fallo al generar dejaba el documento aprobado sin sucesor.
+        """
         registro = await self.obtener(registro_id)
         # `exclude_unset`: un PATCH solo toca lo que el cliente mandó; sin esto
         # los campos omitidos se sobrescribirían con None.
@@ -141,7 +156,6 @@ class CRUDService(Generic[ModeloT]):
         for campo, valor in cambios.items():
             setattr(registro, campo, valor)
         registro.updated_by = usuario_id
-        await self._guardar(registro)
         return registro
 
     # ── Unicidad ────────────────────────────────────────────────────────────

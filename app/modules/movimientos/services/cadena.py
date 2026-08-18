@@ -66,7 +66,7 @@ class DocumentoEncadenadoService(CRUDService[ModeloT]):
         await self._exigir_padre_aprobado(datos.model_dump().get(self.campo_padre))
         return await super().crear(datos, usuario_id)
 
-    async def actualizar(
+    async def _aplicar_cambios(
         self, registro_id: UUID, datos: BaseModel, usuario_id: UUID | None = None
     ) -> ModeloT:
         """Reapuntar el documento revalida; tocar la fecha no.
@@ -74,11 +74,15 @@ class DocumentoEncadenadoService(CRUDService[ModeloT]):
         Solo se mira si el `*_id` del padre viene en el PATCH. Sin esto quedaba
         un hueco evidente: crear contra un padre aprobado y reapuntar después a
         uno pendiente, con lo que la validación del alta no serviría de nada.
+
+        Va en `_aplicar_cambios` y no en `actualizar` para que la comprobación
+        siga corriendo cuando la edición forma parte de una transacción más
+        grande (ver `CRUDService._aplicar_cambios`).
         """
         cambios = datos.model_dump(exclude_unset=True)
         if self.campo_padre in cambios:
             await self._exigir_padre_aprobado(cambios[self.campo_padre])
-        return await super().actualizar(registro_id, datos, usuario_id)
+        return await super()._aplicar_cambios(registro_id, datos, usuario_id)
 
     async def _exigir_padre_aprobado(self, padre_id: UUID | None) -> None:
         if padre_id is None:
