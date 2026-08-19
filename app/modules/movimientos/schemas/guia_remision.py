@@ -12,8 +12,11 @@ class GuiaRemisionCreate(BaseModel):
     # La columna es `orden_compra_id`; antes el schema y el modelo usaban
     # nombres distintos y no se podía crear ninguna guía.
     orden_compra_id: uuid.UUID
-    #: Es NOT NULL en la tabla y faltaba acá: el INSERT moría por integridad.
-    estado_id: uuid.UUID
+    #: Opcional: todo documento de la cadena nace pendiente, así que si no
+    #: llega el servicio le pone `PEN`. Se admite enviarlo para no cerrarle la
+    #: puerta a un alta en otro estado (una carga inicial, por ejemplo), pero
+    #: el caso normal no tiene que conocer el id del catálogo.
+    estado_id: uuid.UUID | None = None
     fecha: date = Field(default_factory=date.today)
 
 

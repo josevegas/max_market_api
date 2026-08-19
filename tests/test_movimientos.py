@@ -55,6 +55,18 @@ async def _almacen(cliente) -> str:
     return r.json()["id"]
 
 
+async def _almacen_de_la_cadena(cliente) -> str:
+    """El almacén que ya creó la cadena.
+
+    `_almacen` no se puede llamar dos veces en el mismo test: zona, sede y
+    market tienen código único y el segundo intento choca con un 409 que no
+    tiene nada que ver con lo que se está probando.
+    """
+    items = (await cliente.get(f"{BASE}/almacenes")).json()["items"]
+    assert items, "la cadena tiene que haber creado el almacén"
+    return items[0]["id"]
+
+
 async def _unidad(cliente, descripcion="Unidad", codigo="UND", factor=1) -> str:
     """Unidad con su equivalencia registrada.
 
@@ -211,6 +223,7 @@ async def test_del_almacen_al_lote_recibido(cliente, catalogo):
     r = await cliente.post(
         f"{BASE}/productos-lote",
         json={
+            "almacen_id": almacen,
             "guia_remision_id": guia,
             "producto_id": producto,
             "unidad_medida_id": unidad,
@@ -702,6 +715,7 @@ async def test_filtrar_lineas_por_guia(cliente, catalogo):
 
 async def test_los_lotes_no_pueden_superar_lo_declarado_en_la_guia(cliente, catalogo):
     guia, unidad, producto = await _guia(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
     await cliente.post(
         f"{BASE}/guias-remision-detalle",
         json={
@@ -712,9 +726,9 @@ async def test_los_lotes_no_pueden_superar_lo_declarado_en_la_guia(cliente, cata
         },
     )
     lote = {
+        "almacen_id": almacen,
         "guia_remision_id": guia,
         "producto_id": producto,
-        "unidad_medida_id": unidad,
         "fecha_ingreso": "2026-08-12",
     }
 
@@ -742,14 +756,15 @@ async def test_los_lotes_no_pueden_superar_lo_declarado_en_la_guia(cliente, cata
 
 
 async def test_un_lote_de_algo_que_la_guia_no_declara_es_400(cliente, catalogo):
-    guia, unidad, producto = await _guia(cliente, catalogo)
+    guia, _, producto = await _guia(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
 
     r = await cliente.post(
         f"{BASE}/productos-lote",
         json={
+            "almacen_id": almacen,
             "guia_remision_id": guia,
             "producto_id": producto,
-            "unidad_medida_id": unidad,
             "fecha_ingreso": "2026-08-12",
             "cantidad": 5,
             "codigo_lote": "L-9",
@@ -762,6 +777,7 @@ async def test_un_lote_de_algo_que_la_guia_no_declara_es_400(cliente, catalogo):
 
 async def test_editar_un_lote_tambien_se_valida(cliente, catalogo):
     guia, unidad, producto = await _guia(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
     await cliente.post(
         f"{BASE}/guias-remision-detalle",
         json={
@@ -775,9 +791,9 @@ async def test_editar_un_lote_tambien_se_valida(cliente, catalogo):
         await cliente.post(
             f"{BASE}/productos-lote",
             json={
+                "almacen_id": almacen,
                 "guia_remision_id": guia,
                 "producto_id": producto,
-                "unidad_medida_id": unidad,
                 "fecha_ingreso": "2026-08-12",
                 "cantidad": 10,
                 "codigo_lote": "L-1",
@@ -798,6 +814,7 @@ async def test_editar_un_lote_tambien_se_valida(cliente, catalogo):
 async def test_no_se_puede_rebajar_la_guia_por_debajo_de_sus_lotes(cliente, catalogo):
     """Si no, bastaría con editar la guía para esquivar la regla del lote."""
     guia, unidad, producto = await _guia(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
     linea = (
         await cliente.post(
             f"{BASE}/guias-remision-detalle",
@@ -812,9 +829,9 @@ async def test_no_se_puede_rebajar_la_guia_por_debajo_de_sus_lotes(cliente, cata
     await cliente.post(
         f"{BASE}/productos-lote",
         json={
+            "almacen_id": almacen,
             "guia_remision_id": guia,
             "producto_id": producto,
-            "unidad_medida_id": unidad,
             "fecha_ingreso": "2026-08-12",
             "cantidad": 15,
             "codigo_lote": "L-1",
@@ -836,6 +853,7 @@ async def test_no_se_puede_rebajar_la_guia_por_debajo_de_sus_lotes(cliente, cata
 
 async def test_dar_de_baja_la_linea_con_lotes_es_409(cliente, catalogo):
     guia, unidad, producto = await _guia(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
     linea = (
         await cliente.post(
             f"{BASE}/guias-remision-detalle",
@@ -850,9 +868,9 @@ async def test_dar_de_baja_la_linea_con_lotes_es_409(cliente, catalogo):
     await cliente.post(
         f"{BASE}/productos-lote",
         json={
+            "almacen_id": almacen,
             "guia_remision_id": guia,
             "producto_id": producto,
-            "unidad_medida_id": unidad,
             "fecha_ingreso": "2026-08-12",
             "cantidad": 5,
             "codigo_lote": "L-1",
@@ -866,6 +884,7 @@ async def test_dar_de_baja_la_linea_con_lotes_es_409(cliente, catalogo):
 
 async def test_dar_de_baja_un_lote_libera_su_cantidad(cliente, catalogo):
     guia, unidad, producto = await _guia(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
     await cliente.post(
         f"{BASE}/guias-remision-detalle",
         json={
@@ -876,9 +895,9 @@ async def test_dar_de_baja_un_lote_libera_su_cantidad(cliente, catalogo):
         },
     )
     lote = {
+        "almacen_id": almacen,
         "guia_remision_id": guia,
         "producto_id": producto,
-        "unidad_medida_id": unidad,
         "fecha_ingreso": "2026-08-12",
     }
     primero = (
@@ -926,7 +945,7 @@ async def _guia_con_unidades(cliente, catalogo):
 async def test_cuatro_cajas_de_doce_equivalen_a_48_unidades(cliente, catalogo):
     """El caso real: la guía viene por paquetes y el almacén en unidad mínima."""
     guia, producto, caja = await _guia_con_unidades(cliente, catalogo)
-    unidad = await _unidad(cliente, "Unidad suelta", "UND2", factor=1)
+    almacen = await _almacen_de_la_cadena(cliente)
 
     # La guía declara 4 cajas = 48 unidades mínimas
     await cliente.post(
@@ -940,9 +959,9 @@ async def test_cuatro_cajas_de_doce_equivalen_a_48_unidades(cliente, catalogo):
     )
 
     lote = {
+        "almacen_id": almacen,
         "guia_remision_id": guia,
         "producto_id": producto,
-        "unidad_medida_id": unidad,
         "fecha_ingreso": "2026-08-12",
     }
     # 48 unidades sueltas caben justo
@@ -964,7 +983,7 @@ async def test_sin_conversion_cuatro_cajas_habrian_admitido_solo_cuatro(
 ):
     """Comparar en crudo daba por buena una guía de 4 cajas contra 4 unidades."""
     guia, producto, caja = await _guia_con_unidades(cliente, catalogo)
-    unidad = await _unidad(cliente, "Unidad suelta", "UND2", factor=1)
+    almacen = await _almacen_de_la_cadena(cliente)
     await cliente.post(
         f"{BASE}/guias-remision-detalle",
         json={
@@ -978,9 +997,9 @@ async def test_sin_conversion_cuatro_cajas_habrian_admitido_solo_cuatro(
     r = await cliente.post(
         f"{BASE}/productos-lote",
         json={
+            "almacen_id": almacen,
             "guia_remision_id": guia,
             "producto_id": producto,
-            "unidad_medida_id": unidad,
             "fecha_ingreso": "2026-08-12",
             "cantidad": 20,
             "codigo_lote": "L-1",
@@ -990,9 +1009,11 @@ async def test_sin_conversion_cuatro_cajas_habrian_admitido_solo_cuatro(
     assert r.status_code == 201, "20 unidades caben en 4 cajas de 12"
 
 
-async def test_lotes_en_unidades_distintas_se_suman_convertidos(cliente, catalogo):
+async def test_varios_lotes_se_suman_y_se_comparan_convertidos(cliente, catalogo):
+    """El lote ya no trae unidad propia: todos van en la de venta del producto
+    y lo que se compara es su suma contra la guía convertida."""
     guia, producto, caja = await _guia_con_unidades(cliente, catalogo)
-    unidad = await _unidad(cliente, "Unidad suelta", "UND2", factor=1)
+    almacen = await _almacen_de_la_cadena(cliente)
     await cliente.post(
         f"{BASE}/guias-remision-detalle",
         json={
@@ -1003,45 +1024,39 @@ async def test_lotes_en_unidades_distintas_se_suman_convertidos(cliente, catalog
         },
     )
     base = {
+        "almacen_id": almacen,
         "guia_remision_id": guia,
         "producto_id": producto,
         "fecha_ingreso": "2026-08-12",
     }
 
-    # 3 cajas (36) + 12 sueltas = 48 justo
+    # 36 + 12 = 48 justo
     assert (
         await cliente.post(
             f"{BASE}/productos-lote",
-            json={
-                **base,
-                "unidad_medida_id": caja,
-                "cantidad": 3,
-                "codigo_lote": "L-1",
-            },
+            json={**base, "cantidad": 36, "codigo_lote": "L-1"},
         )
     ).status_code == 201
     assert (
         await cliente.post(
             f"{BASE}/productos-lote",
-            json={
-                **base,
-                "unidad_medida_id": unidad,
-                "cantidad": 12,
-                "codigo_lote": "L-2",
-            },
+            json={**base, "cantidad": 12, "codigo_lote": "L-2"},
         )
     ).status_code == 201
 
     # Una más se pasa
     r = await cliente.post(
         f"{BASE}/productos-lote",
-        json={**base, "unidad_medida_id": unidad, "cantidad": 1, "codigo_lote": "L-3"},
+        json={**base, "cantidad": 1, "codigo_lote": "L-3"},
     )
     assert r.status_code == 409
 
 
 async def test_sin_equivalencia_registrada_es_400(cliente, catalogo):
+    """La unidad que le falta el factor es la de venta del producto: sin ella
+    no hay con qué llevar el lote a unidad mínima."""
     guia, producto, caja = await _guia_con_unidades(cliente, catalogo)
+    almacen = await _almacen_de_la_cadena(cliente)
     await cliente.post(
         f"{BASE}/guias-remision-detalle",
         json={
@@ -1055,10 +1070,10 @@ async def test_sin_equivalencia_registrada_es_400(cliente, catalogo):
     # a este estado hay que darla de baja después. Sigue siendo alcanzable —los
     # registros anteriores a que el alta exigiera el factor están así— y es lo
     # que este 400 protege.
-    huerfana = await _unidad(cliente, "Sin factor", "NOFAC")
     equivalencia = (
         await cliente.get(
-            f"{BASE}/tablas-equivalencia", params={"unidad_medida_id": huerfana}
+            f"{BASE}/tablas-equivalencia",
+            params={"unidad_medida_id": catalogo["unidad_venta"]},
         )
     ).json()["items"][0]["id"]
     await cliente.delete(f"{BASE}/tablas-equivalencia/{equivalencia}")
@@ -1066,9 +1081,9 @@ async def test_sin_equivalencia_registrada_es_400(cliente, catalogo):
     r = await cliente.post(
         f"{BASE}/productos-lote",
         json={
+            "almacen_id": almacen,
             "guia_remision_id": guia,
             "producto_id": producto,
-            "unidad_medida_id": huerfana,
             "fecha_ingreso": "2026-08-12",
             "cantidad": 1,
             "codigo_lote": "L-X",
@@ -1076,7 +1091,7 @@ async def test_sin_equivalencia_registrada_es_400(cliente, catalogo):
     )
 
     assert r.status_code == 400
-    assert "NOFAC" in r.json()["detail"]
+    assert "UBASE" in r.json()["detail"]
 
 
 async def test_una_unidad_no_puede_tener_dos_factores(cliente):

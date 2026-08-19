@@ -14,6 +14,7 @@ from app.modules.almacenes.models.producto_lote import ProductoLote
 from app.modules.bancos.models.banco import Banco
 from app.modules.bancos.models.cuenta import Cuenta
 from app.modules.bancos.models.tipo_cuenta import TipoCuenta
+from app.modules.facturas.models.factura import Factura
 from app.modules.markets.models.market import Market
 from app.modules.markets.models.sede import Sede
 from app.modules.markets.models.zona import Zona
@@ -51,6 +52,9 @@ from app.modules.proveedores.models.padron_agente import (
 from app.modules.proveedores.models.proveedor_producto import ProveedorProducto
 from app.modules.unidades.models.tabla_equivalencia import TablaEquivalencia
 from app.modules.unidades.models.unidad_medida import UnidadMedida
+from app.modules.ventas.models.tipo_comprobante import TipoComprobante
+from app.modules.ventas.models.venta import Venta
+from app.modules.ventas.models.venta_detalle import VentaDetalle, VentaLote
 
 __all__ = [
     "Almacen",
@@ -62,6 +66,7 @@ __all__ = [
     "Cuenta",
     "Empresa",
     "Estado",
+    "Factura",
     "Familia",
     "GuiaRemision",
     "GuiaRemisionDetalle",
@@ -86,7 +91,11 @@ __all__ = [
     "SubCategoria",
     "SubFamilia",
     "TablaEquivalencia",
+    "TipoComprobante",
     "TipoCuenta",
     "UnidadMedida",
+    "Venta",
+    "VentaDetalle",
+    "VentaLote",
     "Zona",
 ]

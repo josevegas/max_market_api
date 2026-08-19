@@ -13,7 +13,11 @@ class OrdenCompraCreate(BaseModel):
     cotizacion_id: uuid.UUID
     # `estado_id` y no `estado: str`: la columna es una FK a `estados`, así que
     # un texto libre acababa en "invalid keyword argument" al crear.
-    estado_id: uuid.UUID
+    #: Opcional: todo documento de la cadena nace pendiente, así que si no
+    #: llega el servicio le pone `PEN`. Se admite enviarlo para no cerrarle la
+    #: puerta a un alta en otro estado (una carga inicial, por ejemplo), pero
+    #: el caso normal no tiene que conocer el id del catálogo.
+    estado_id: uuid.UUID | None = None
     fecha: date = Field(default_factory=date.today)
     # Ni `proveedor_id` (se obtiene de la cotización) ni `monto_total` (lo
     # calcula el servicio sumando `orden_compra_detalle`).

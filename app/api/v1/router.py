@@ -11,12 +11,17 @@ from app.modules.almacenes.api.producto_almacen_router import (
 from app.modules.almacenes.api.producto_lote_router import (
     router as productos_lote_router,
 )
+from app.modules.almacenes.api.stock_router import router as stock_router
 from app.modules.bancos.api.banco_router import router as bancos_router
 from app.modules.bancos.api.cuenta_router import router as cuentas_router
 from app.modules.bancos.api.tipo_cuenta_router import router as tipos_cuenta_router
+from app.modules.facturas.api.factura_router import router as facturas_router
 from app.modules.markets.api.market_router import router as markets_router
 from app.modules.markets.api.sede_router import router as sedes_router
 from app.modules.markets.api.zona_router import router as zonas_router
+from app.modules.movimientos.api.comparativo_router import (
+    router as comparativo_cotizaciones_router,
+)
 from app.modules.movimientos.api.cotizacion_detalle_router import (
     router as cotizaciones_detalle_router,
 )
@@ -70,6 +75,11 @@ from app.modules.unidades.api.tabla_equivalencia_router import (
 from app.modules.unidades.api.unidad_medida_router import (
     router as unidades_medida_router,
 )
+from app.modules.ventas.api.venta_router import (
+    tipos_comprobante_router,
+    ventas_detalle_router,
+    ventas_router,
+)
 
 api_router = APIRouter()
 
@@ -103,6 +113,8 @@ api_router.include_router(tablas_equivalencia_router)
 api_router.include_router(almacenes_router)
 api_router.include_router(productos_almacen_router)
 api_router.include_router(productos_lote_router)
+# El stock no es una tabla: sale de sumar los lotes del almacén.
+api_router.include_router(stock_router)
 
 # Compras, en el orden en que ocurren: requerimiento → pedido → cotización →
 # orden de compra → guía de remisión → recepción.
@@ -113,9 +125,21 @@ api_router.include_router(pedidos_router)
 api_router.include_router(pedidos_detalle_router)
 api_router.include_router(cotizaciones_router)
 api_router.include_router(cotizaciones_detalle_router)
+# Cuelga de `/pedidos/{id}` y `/requerimientos/{id}`, no de `/cotizaciones`:
+# el comparativo no es una cotización, es la comparación entre las de un
+# pedido. Va después del CRUD y no choca: las rutas llevan sufijo propio.
+api_router.include_router(comparativo_cotizaciones_router)
 api_router.include_router(ordenes_compra_router)
 api_router.include_router(ordenes_compra_detalle_router)
 api_router.include_router(guias_remision_router)
 api_router.include_router(guias_remision_detalle_router)
 api_router.include_router(recepciones_router)
 api_router.include_router(recepciones_detalle_router)
+# La factura del proveedor: cobra la orden, y puede llegar antes o después
+# de que la mercadería entre.
+api_router.include_router(facturas_router)
+
+# Ventas: emitir el comprobante y descontar el stock son el mismo hecho.
+api_router.include_router(tipos_comprobante_router)
+api_router.include_router(ventas_router)
+api_router.include_router(ventas_detalle_router)

@@ -12,9 +12,16 @@ from app.shared.base import RespuestaBase, rechazar_nulos
 class CotizacionCreate(BaseModel):
     pedido_id: uuid.UUID
     proveedor_id: uuid.UUID
-    estado_id: uuid.UUID
+    #: Opcional: todo documento de la cadena nace pendiente, así que si no
+    #: llega el servicio le pone `PEN`. Se admite enviarlo para no cerrarle la
+    #: puerta a un alta en otro estado (una carga inicial, por ejemplo), pero
+    #: el caso normal no tiene que conocer el id del catálogo.
+    estado_id: uuid.UUID | None = None
     #: Días que el proveedor tarda en atender, como en `proveedor_productos`.
     tiempo_atencion: int = Field(default=0, ge=0, le=365)
+    #: Días de crédito que ofrece el proveedor. 0 es contado, que es el default:
+    #: la cotización que nadie completó no debe puntuar mejor por eso.
+    condicion_pago_dias: int = Field(default=0, ge=0, le=365)
     fecha: date = Field(default_factory=date.today)
     # `monto_total` no se envía: lo recalcula el servicio sumando las líneas.
 
@@ -28,10 +35,16 @@ class CotizacionUpdate(BaseModel):
     # PATCH ni la respuesta funcionaban.
     estado_id: uuid.UUID | None = None
     tiempo_atencion: int | None = Field(default=None, ge=0, le=365)
+    condicion_pago_dias: int | None = Field(default=None, ge=0, le=365)
     fecha: date | None = None
 
     _no_nulos = rechazar_nulos(
-        "pedido_id", "proveedor_id", "estado_id", "tiempo_atencion", "fecha"
+        "pedido_id",
+        "proveedor_id",
+        "estado_id",
+        "tiempo_atencion",
+        "condicion_pago_dias",
+        "fecha",
     )
 
 
@@ -40,5 +53,6 @@ class CotizacionResponse(RespuestaBase):
     proveedor_id: uuid.UUID
     estado_id: uuid.UUID
     tiempo_atencion: int
+    condicion_pago_dias: int
     fecha: date
     monto_total: Decimal

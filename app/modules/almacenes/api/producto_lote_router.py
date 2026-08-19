@@ -17,5 +17,13 @@ router = crear_router_crud(
     schema_create=ProductoLoteCreate,
     schema_update=ProductoLoteUpdate,
     schema_response=ProductoLoteResponse,
-    filtros={"guia_remision_id": UUID, "producto_id": UUID, "estado": str},
+    # `almacen_id` filtra la pila física: el detalle de stock pregunta por los
+    # lotes de un producto **en un almacén**, y sin él habría que traer los de
+    # todos los almacenes para descartarlos en el cliente.
+    filtros={
+        "almacen_id": UUID,
+        "guia_remision_id": UUID,
+        "producto_id": UUID,
+        "estado": str,
+    },
 )

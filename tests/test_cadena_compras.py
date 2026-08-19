@@ -17,8 +17,10 @@ import pytest
 from app.modules.movimientos.constantes import (
     CODIGO_APROBADO,
     CODIGO_ATENDIDO,
+    CODIGO_OBSERVADO,
     CODIGO_PENDIENTE,
     CODIGO_RECEPCIONADO,
+    CODIGO_RECHAZADO,
 )
 
 BASE = "/api/v1"
@@ -192,11 +194,74 @@ async def _guia(cliente) -> str:
 
 @pytest.mark.parametrize(
     "codigo",
-    [CODIGO_PENDIENTE, CODIGO_APROBADO, CODIGO_RECEPCIONADO, CODIGO_ATENDIDO],
+    [
+        CODIGO_PENDIENTE,
+        CODIGO_APROBADO,
+        CODIGO_OBSERVADO,
+        CODIGO_RECHAZADO,
+        CODIGO_RECEPCIONADO,
+        CODIGO_ATENDIDO,
+    ],
 )
 async def test_los_estados_de_la_cadena_vienen_sembrados(cliente, codigo):
     """Sin ellos la cadena no puede operar, así que los pone la migración."""
     assert await _estado(cliente, codigo)
+
+
+# ===================== Observar y rechazar no hacen avanzar nada =====================
+
+
+@pytest.mark.parametrize("codigo", [CODIGO_OBSERVADO, CODIGO_RECHAZADO])
+async def test_observar_o_rechazar_no_genera_el_sucesor(cliente, codigo):
+    """Solo `APR` emite el documento siguiente.
+
+    `GeneraSucesorAlAprobar` compara contra el id de aprobado, así que en
+    principio cualquier otro estado es inofensivo. Se prueba igual porque los
+    botones de la pantalla mandan justo este PATCH: si mañana alguien ampliara
+    la condición a "cualquier estado distinto de pendiente", observar un
+    requerimiento emitiría el pedido que el revisor acaba de frenar.
+    """
+    req = await _requerimiento(cliente, aprobado=False)
+
+    r = await cliente.patch(
+        f"{BASE}/requerimientos/{req}",
+        json={"estado_id": await _estado(cliente, codigo)},
+    )
+    assert r.status_code == 200, r.text
+    assert await _codigo_de(cliente, "requerimientos", req) == codigo
+
+    pedidos = (
+        await cliente.get(f"{BASE}/pedidos", params={"requerimiento_id": req})
+    ).json()["items"]
+    assert pedidos == []
+
+
+@pytest.mark.parametrize("codigo", [CODIGO_OBSERVADO, CODIGO_RECHAZADO])
+async def test_el_hijo_no_nace_de_un_padre_observado_ni_rechazado(cliente, codigo):
+    """La regla del padre aprobado no distingue: si no es `APR`, no se puede."""
+    req = await _requerimiento(cliente, aprobado=False)
+    await cliente.patch(
+        f"{BASE}/requerimientos/{req}",
+        json={"estado_id": await _estado(cliente, codigo)},
+    )
+
+    r = await cliente.post(f"{BASE}/pedidos", json={"requerimiento_id": req})
+    assert r.status_code == 409, r.text
+
+
+async def test_observar_y_despues_aprobar_si_genera_el_sucesor(cliente):
+    """Observado es reversible: se corrige y se vuelve a presentar."""
+    req = await _requerimiento(cliente, aprobado=False)
+    await cliente.patch(
+        f"{BASE}/requerimientos/{req}",
+        json={"estado_id": await _estado(cliente, CODIGO_OBSERVADO)},
+    )
+    await _aprobar(cliente, "requerimientos", req)
+
+    pedidos = (
+        await cliente.get(f"{BASE}/pedidos", params={"requerimiento_id": req})
+    ).json()["items"]
+    assert len(pedidos) == 1
 
 
 # ===================== Cada eslabón exige el anterior aprobado =====================
@@ -418,3 +483,95 @@ async def test_la_recepcion_se_filtra_por_guia(cliente):
     r = await cliente.get(f"{BASE}/recepciones", params={"guia_remision_id": guia})
 
     assert [x["id"] for x in r.json()["items"]] == [recepcion]
+
+
+# ============ El alta sin estado nace pendiente ============
+
+
+async def test_el_requerimiento_sin_estado_nace_pendiente(cliente):
+    """El caso normal del alta: quien registra no tiene por qué conocer el id
+    de `estados`, y el documento arranca donde arranca la cadena."""
+    almacen = await _almacen(cliente)
+
+    r = await cliente.post(f"{BASE}/requerimientos", json={"almacen_id": almacen})
+
+    assert r.status_code == 201, r.text
+    assert await _codigo_de(cliente, "requerimientos", r.json()["id"]) == (
+        CODIGO_PENDIENTE
+    )
+
+
+async def test_el_pedido_sin_estado_nace_pendiente(cliente):
+    r = await cliente.post(
+        f"{BASE}/pedidos", json={"requerimiento_id": await _requerimiento(cliente)}
+    )
+
+    assert r.status_code == 201, r.text
+    assert await _codigo_de(cliente, "pedidos", r.json()["id"]) == CODIGO_PENDIENTE
+
+
+async def test_la_cotizacion_sin_estado_nace_pendiente(cliente):
+    r = await cliente.post(
+        f"{BASE}/cotizaciones",
+        json={
+            "pedido_id": await _pedido(cliente),
+            "proveedor_id": await _proveedor(cliente),
+        },
+    )
+
+    assert r.status_code == 201, r.text
+    assert await _codigo_de(cliente, "cotizaciones", r.json()["id"]) == CODIGO_PENDIENTE
+
+
+async def test_la_orden_sin_estado_nace_pendiente(cliente):
+    r = await cliente.post(
+        f"{BASE}/ordenes-compra", json={"cotizacion_id": await _cotizacion(cliente)}
+    )
+
+    assert r.status_code == 201, r.text
+    assert await _codigo_de(cliente, "ordenes-compra", r.json()["id"]) == (
+        CODIGO_PENDIENTE
+    )
+
+
+async def test_la_guia_sin_estado_nace_pendiente(cliente):
+    r = await cliente.post(
+        f"{BASE}/guias-remision", json={"orden_compra_id": await _orden(cliente)}
+    )
+
+    assert r.status_code == 201, r.text
+    assert await _codigo_de(cliente, "guias-remision", r.json()["id"]) == (
+        CODIGO_PENDIENTE
+    )
+
+
+async def test_el_estado_enviado_gana_sobre_el_pendiente(cliente):
+    """El default es para el caso normal, no un candado: una carga inicial
+    tiene que poder dar de alta un documento ya aprobado."""
+    almacen = await _almacen(cliente)
+
+    r = await cliente.post(
+        f"{BASE}/requerimientos",
+        json={
+            "almacen_id": almacen,
+            "estado_id": await _estado(cliente, CODIGO_APROBADO),
+        },
+    )
+
+    assert r.status_code == 201, r.text
+    assert await _codigo_de(cliente, "requerimientos", r.json()["id"]) == (
+        CODIGO_APROBADO
+    )
+
+
+async def test_el_documento_nunca_queda_sin_estado(cliente):
+    """`estado_id` sigue siendo NOT NULL: un documento sin estado no está
+    pendiente ni aprobado, y la cadena entera decide mirando ese campo."""
+    almacen = await _almacen(cliente)
+
+    r = await cliente.post(
+        f"{BASE}/requerimientos", json={"almacen_id": almacen, "estado_id": None}
+    )
+
+    assert r.status_code == 201, r.text
+    assert r.json()["estado_id"] is not None

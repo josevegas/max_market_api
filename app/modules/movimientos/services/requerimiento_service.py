@@ -6,10 +6,13 @@ from app.modules.movimientos.models.pedido import Pedido
 from app.modules.movimientos.models.pedido_detalle import PedidoDetalle
 from app.modules.movimientos.models.requerimiento import Requerimiento
 from app.modules.movimientos.models.requerimiento_detalle import RequerimientoDetalle
+from app.modules.movimientos.services.cadena import NaceEnPendiente
 from app.modules.movimientos.services.generacion import GeneraSucesorAlAprobar
 
 
-class RequerimientoService(GeneraSucesorAlAprobar[Requerimiento]):
+class RequerimientoService(
+    NaceEnPendiente[Requerimiento], GeneraSucesorAlAprobar[Requerimiento]
+):
     """Aprobar el requerimiento genera el pedido con las mismas líneas.
 
     Es el principio de la cadena: no tiene padre que validar, solo sucesor que

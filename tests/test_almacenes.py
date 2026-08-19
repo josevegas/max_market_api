@@ -143,13 +143,17 @@ async def test_crear_ficha_de_producto_en_almacen(cliente, catalogo):
             "unidad_medida_id": unidad,
             "stock_minimo": 10,
             "stock_maximo": 100,
+            # Con `precio_manual` el precio queda como se carga; sin ella lo
+            # calcula el stock (ver `test_stock`).
             "precio_venta_tienda": "12.50",
+            "precio_manual": True,
             "estado": "disponible",
         },
     )
 
     assert r.status_code == 201, r.text
     assert r.json()["precio_venta_tienda"] == "12.50"
+    assert r.json()["precio_manual"] is True
     assert r.json()["estado"] == "disponible"
 
 

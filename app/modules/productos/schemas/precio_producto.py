@@ -12,7 +12,9 @@ from app.shared.base import RespuestaBase
 class PrecioProductoCreate(BaseModel):
     producto_id: uuid.UUID
     precio_compra: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
-    precio_venta: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    # `precio_venta` no se envía: lo calcula el servicio con el margen de la
+    # categoría del producto (ver `calculo_precio`), igual que `monto_total`
+    # en la orden de compra. Mandarlo se ignora.
     fecha_inicio: date
     #: Sin fecha de fin, el precio rige hasta nuevo aviso.
     fecha_fin: date | None = None
@@ -30,9 +32,7 @@ class PrecioProductoUpdate(BaseModel):
     precio_compra: Decimal | None = Field(
         default=None, ge=0, max_digits=12, decimal_places=2
     )
-    precio_venta: Decimal | None = Field(
-        default=None, ge=0, max_digits=12, decimal_places=2
-    )
+    # Tampoco acá: cambiar `precio_compra` recalcula el de venta.
     fecha_inicio: date | None = None
     fecha_fin: date | None = None
 

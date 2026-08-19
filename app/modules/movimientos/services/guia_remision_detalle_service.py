@@ -12,11 +12,12 @@ from typing import ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
 
 from app.core.crud import CRUDService
 from app.core.exceptions import ConflictoError
-from app.modules.almacenes.models.producto_lote import ProductoLote
+from app.modules.almacenes.services.producto_lote_service import (
+    lotes_en_unidad_minima,
+)
 from app.modules.movimientos.models.guia_remision_detalle import GuiaRemisionDetalle
 from app.modules.unidades.services.conversion import a_unidades_minimas
 
@@ -58,22 +59,12 @@ class GuiaRemisionDetalleService(CRUDService[GuiaRemisionDetalle]):
         cantidad: int,
         unidad_medida_id: UUID,
     ) -> None:
-        """Compara **en unidad mínima**: la línea viene por paquetes."""
-        filas = await self.db.execute(
-            select(
-                ProductoLote.unidad_medida_id,
-                func.coalesce(func.sum(ProductoLote.cantidad), 0),
-            )
-            .where(
-                ProductoLote.guia_remision_id == guia_remision_id,
-                ProductoLote.producto_id == producto_id,
-                ProductoLote.is_active.is_(True),
-            )
-            .group_by(ProductoLote.unidad_medida_id)
-        )
-        recibido = 0
-        for unidad_id, cant in filas:
-            recibido += await a_unidades_minimas(self.db, cant, unidad_id)
+        """Compara **en unidad mínima**.
+
+        La línea viene por paquetes y los lotes en la unidad de venta del
+        producto, así que ninguno de los dos números sirve tal cual.
+        """
+        recibido = await lotes_en_unidad_minima(self.db, guia_remision_id, producto_id)
 
         # La línea en cero no necesita factor: es la baja, y exigir una
         # equivalencia para poder anular sería un bloqueo sin sentido.

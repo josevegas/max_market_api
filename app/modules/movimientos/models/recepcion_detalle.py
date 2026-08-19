@@ -21,9 +21,14 @@ class RecepcionDetalle(Base, AuditMixin):
     """Lo que entró de verdad, línea a línea.
 
     Guarda tres cantidades y no una: lo que la guía decía (`cantidad_esperada`),
-    lo que se aceptó (`cantidad_ingresada`) y lo que se devolvió al proveedor
-    (`cantidad_devuelta`). Con una sola no se distingue "no lo trajeron" de
-    "lo trajeron mal", que es justo lo que se le reclama al proveedor.
+    lo que se aceptó (`cantidad_ingresada`) y lo que no se aceptó, sea porque
+    no llegó o porque se rechazó (`cantidad_devuelta`). Con una sola no se
+    distingue "no lo trajeron" de "lo trajeron mal", que es justo lo que se le
+    reclama al proveedor.
+
+    Las tres cuadran: `esperada = ingresada + devuelta`. **Al stock entra
+    `cantidad_ingresada` sola** —ver `stock_service`—, porque ya es lo aceptado;
+    restarle lo devuelto descontaría dos veces la misma mercadería.
     """
 
     __tablename__ = "recepcion_detalle"

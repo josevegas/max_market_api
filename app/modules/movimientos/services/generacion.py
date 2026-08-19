@@ -26,8 +26,10 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.crud import CRUDService, ModeloT
+from app.core.exceptions import ConflictoError
 from app.modules.movimientos.constantes import CODIGO_APROBADO, CODIGO_PENDIENTE
 from app.modules.movimientos.services.cadena import id_de_codigo
 
@@ -74,10 +76,40 @@ class GeneraSucesorAlAprobar(CRUDService[ModeloT]):
 
         registro = await self._aplicar_cambios(registro_id, datos, usuario_id)
         if not venia_aprobado and registro.estado_id == aprobado_id:
-            await self._generar_sucesor(registro, usuario_id)
+            # Antes de generar el sucesor y en su propio bloque: sus errores no
+            # son "no se pudo generar el documento siguiente", y traducirlos con
+            # ese mensaje mandaría a mirar el lugar equivocado.
+            await self._al_aprobar(registro, usuario_id)
+            try:
+                await self._generar_sucesor(registro, usuario_id)
+            except IntegrityError as exc:
+                # El `flush` de la generación puede chocar con una restricción.
+                # Sin traducirlo sale como 500, y sin el rollback la sesión
+                # queda con una transacción abortada: la aprobación seguiría en
+                # memoria como hecha cuando en la base no entró nada.
+                await self.db.rollback()
+                raise ConflictoError(
+                    f"No se pudo generar el documento siguiente a {self.entidad.lower()} "
+                    f"{registro_id}: choca con una restricción de la base."
+                ) from exc
+            except Exception:
+                await self.db.rollback()
+                raise
 
         await self._guardar(registro)
         return registro
+
+    async def _al_aprobar(self, registro: ModeloT, usuario_id: UUID | None) -> None:
+        """Efectos colaterales de la **primera** aprobación, además del sucesor.
+
+        Existe como gancho y no resuelto en cada servicio para no duplicar la
+        detección de "recién aprobado": `venia_aprobado` es la única guarda que
+        distingue una aprobación de un PATCH cualquiera sobre un documento ya
+        aprobado, y una segunda copia de esa lógica acabaría diciendo otra cosa.
+
+        Por defecto no hace nada. Hoy solo la cotización lo usa, para descartar
+        a las hermanas cuando se elige un proveedor.
+        """
 
     # ── Generación ──────────────────────────────────────────────────────────
 

@@ -22,6 +22,7 @@ from app.modules.movimientos.models.pedido_detalle import PedidoDetalle
 from app.modules.movimientos.models.requerimiento import Requerimiento
 from app.modules.movimientos.services.cadena import (
     DocumentoEncadenadoService,
+    NaceEnPendiente,
     id_de_codigo,
 )
 from app.modules.movimientos.services.generacion import GeneraSucesorAlAprobar
@@ -30,7 +31,9 @@ from app.modules.proveedores.models.proveedor_producto import ProveedorProducto
 
 
 class PedidoService(
-    GeneraSucesorAlAprobar[Pedido], DocumentoEncadenadoService[Pedido]
+    NaceEnPendiente[Pedido],
+    GeneraSucesorAlAprobar[Pedido],
+    DocumentoEncadenadoService[Pedido],
 ):
     """Un pedido solo nace de un requerimiento aprobado.
 
@@ -56,7 +59,9 @@ class PedidoService(
     # arrancan en cero y las completa el proveedor.
     campo_monto_linea: ClassVar[str] = "monto_producto"
 
-    async def _generar_sucesor(self, documento: Pedido, usuario_id: UUID | None) -> None:
+    async def _generar_sucesor(
+        self, documento: Pedido, usuario_id: UUID | None
+    ) -> None:
         """Una cotización por proveedor, con lo que cada uno puede atender."""
         if await self._ya_tiene_sucesor(documento.id):
             return

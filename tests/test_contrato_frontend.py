@@ -130,7 +130,6 @@ async def test_los_importes_viajan_como_texto(cliente, catalogo):
         json={
             "producto_id": producto["id"],
             "precio_compra": "12.30",
-            "precio_venta": "15.90",
             "fecha_inicio": "2020-01-01",
         },
     )
@@ -139,7 +138,9 @@ async def test_los_importes_viajan_como_texto(cliente, catalogo):
         await cliente.get(f"{BASE}/productos/{producto['id']}/precio-vigente")
     ).json()
 
-    assert precio["precio_venta"] == "15.90"
+    # 12.30 con el 18.5% de la categoría de la fixture. El número lo fija
+    # `test_precio_venta`; acá lo que importa es que viaje como texto.
+    assert precio["precio_venta"] == "14.58"
     assert isinstance(precio["precio_venta"], str)
 
 

@@ -241,7 +241,6 @@ async def test_precio_vigente(cliente, catalogo):
         json={
             "producto_id": producto["id"],
             "precio_compra": "12.30",
-            "precio_venta": "15.90",
             "fecha_inicio": "2020-01-01",
         },
     )
@@ -250,7 +249,8 @@ async def test_precio_vigente(cliente, catalogo):
 
     assert r.status_code == 200
     # Decimal, no float: los importes no pueden arrastrar error de redondeo.
-    assert r.json()["precio_venta"] == "15.90"
+    # El de venta lo calcula el servidor (ver `test_precio_venta`).
+    assert r.json()["precio_venta"] == "14.58"
 
 
 async def test_producto_sin_precio_vigente_es_404(cliente, catalogo):

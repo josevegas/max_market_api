@@ -4,10 +4,15 @@ from typing import ClassVar
 
 from app.modules.movimientos.models.guia_remision import GuiaRemision
 from app.modules.movimientos.models.orden_compra import OrdenCompra
-from app.modules.movimientos.services.cadena import DocumentoEncadenadoService
+from app.modules.movimientos.services.cadena import (
+    DocumentoEncadenadoService,
+    NaceEnPendiente,
+)
 
 
-class GuiaRemisionService(DocumentoEncadenadoService[GuiaRemision]):
+class GuiaRemisionService(
+    NaceEnPendiente[GuiaRemision], DocumentoEncadenadoService[GuiaRemision]
+):
     """La guía documenta lo que trae el proveedor contra una orden aprobada."""
 
     modelo = GuiaRemision

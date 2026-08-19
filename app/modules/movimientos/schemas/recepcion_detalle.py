@@ -17,7 +17,10 @@ class RecepcionDetalleCreate(BaseModel):
     # `ge=0` y no un `Field` pelado: sin la restricción, un -5 entraba. Se
     # admite 0 en las tres para poder dejar constancia de lo que no llegó.
     cantidad_esperada: int = Field(default=0, ge=0)
+    #: Lo **aceptado**: es lo que entra al stock, tal cual, sin restarle nada.
     cantidad_ingresada: int = Field(default=0, ge=0)
+    #: Lo que no se aceptó, haya faltado o se haya rechazado. Es el reclamo al
+    #: proveedor, no un descuento del stock.
     cantidad_devuelta: int = Field(default=0, ge=0)
     # `Decimal("0")` y no `0`: con el int, Pydantic serializaba avisando de que
     # esperaba un decimal, y el importe es dinero.

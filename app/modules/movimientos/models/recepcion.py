@@ -31,12 +31,12 @@ class Recepcion(Base, AuditMixin):
         nullable=True,
         index=True,
     )
-    #: Sin `ForeignKey` a propósito: el módulo de facturas todavía no tiene
-    #: tabla (`app/modules/facturas` no está registrado en `app/db/models.py`
-    #: ni tiene migración), y una FK contra una tabla inexistente no se puede
-    #: crear. La columna se deja lista para atarla cuando ese módulo exista.
+    #: `SET NULL` y no `CASCADE`: anular la factura no borra la recepción. La
+    #: mercadería entró igual, y perder ese registro por un problema de
+    #: facturación dejaría el stock sin el documento que lo respalda.
     factura_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
+        ForeignKey("facturas.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

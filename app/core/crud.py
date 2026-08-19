@@ -117,11 +117,27 @@ class CRUDService(Generic[ModeloT]):
     # ── Escritura ───────────────────────────────────────────────────────────
 
     async def crear(self, datos: BaseModel, usuario_id: UUID | None = None) -> ModeloT:
+        registro = await self._crear_sin_guardar(datos, usuario_id)
+        await self._guardar(registro)
+        return registro
+
+    async def _crear_sin_guardar(
+        self, datos: BaseModel, usuario_id: UUID | None = None
+    ) -> ModeloT:
+        """El alta sin el commit, para poder acompañarla de otros cambios.
+
+        Simétrico de `_aplicar_cambios`, y por el mismo motivo: hay altas que
+        arrastran más escrituras y las dos cosas tienen que entrar juntas. Una
+        línea de recepción alimenta el stock (ver `stock_service`), y con el
+        commit dentro el lote quedaba en una transacción que nadie cerraba.
+        """
         valores = datos.model_dump()
         await self._validar_unicidad(valores)
         registro = self.modelo(**valores, created_by=usuario_id)
         self.db.add(registro)
-        await self._guardar(registro)
+        # `flush` y no `commit`: hace falta que la fila exista para lo que
+        # venga colgado de ella, pero la transacción sigue abierta.
+        await self._vaciar()
         return registro
 
     async def actualizar(
@@ -206,10 +222,17 @@ class CRUDService(Generic[ModeloT]):
         self, registro_id: UUID, usuario_id: UUID | None = None
     ) -> ModeloT:
         """Baja lógica: la fila queda, deja de listarse."""
+        registro = await self._desactivar_sin_guardar(registro_id, usuario_id)
+        await self._guardar(registro)
+        return registro
+
+    async def _desactivar_sin_guardar(
+        self, registro_id: UUID, usuario_id: UUID | None = None
+    ) -> ModeloT:
+        """La baja sin el commit. Mismo motivo que `_crear_sin_guardar`."""
         registro = await self.obtener(registro_id)
         registro.is_active = False
         registro.updated_by = usuario_id
-        await self._guardar(registro)
         return registro
 
     # ── Interno ─────────────────────────────────────────────────────────────
@@ -229,25 +252,41 @@ class CRUDService(Generic[ModeloT]):
             if registro is not None:
                 await self.db.refresh(registro)
         except IntegrityError as exc:
-            await self.db.rollback()
-            # Se mira el SQLSTATE, no el texto del error: PostgreSQL traduce
-            # los mensajes al idioma del servidor ("llave foránea" en un
-            # servidor en español), así que buscar "foreign key" no encuentra
-            # nada. El código, en cambio, es siempre el mismo.
-            codigo = _sqlstate(exc)
-            if codigo == "23505":  # unique_violation
-                raise ConflictoError(
-                    f"Ya existe un registro de {self.entidad} con esos datos únicos."
-                ) from exc
-            if codigo == "23503":  # foreign_key_violation
-                raise ReferenciaInvalidaError(
-                    "Alguna de las referencias enviadas no existe."
-                ) from exc
-            if codigo in ("23502", "23514"):  # not_null / check_violation
-                raise ReferenciaInvalidaError(
-                    "Los datos enviados no cumplen una restricción de la base."
-                ) from exc
-            raise
+            await self._traducir_integridad(exc)
+
+    async def _vaciar(self) -> None:
+        """`flush` con la misma traducción de errores que el commit.
+
+        El `flush` manda el INSERT sin cerrar la transacción, así que puede
+        chocar con las mismas restricciones. Sin pasar por acá salía como un
+        500 y encima dejaba la sesión con la transacción abortada.
+        """
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            await self._traducir_integridad(exc)
+
+    async def _traducir_integridad(self, exc: IntegrityError) -> None:
+        """Convierte el error de la base en uno de dominio. Siempre relanza."""
+        await self.db.rollback()
+        # Se mira el SQLSTATE, no el texto del error: PostgreSQL traduce
+        # los mensajes al idioma del servidor ("llave foránea" en un
+        # servidor en español), así que buscar "foreign key" no encuentra
+        # nada. El código, en cambio, es siempre el mismo.
+        codigo = _sqlstate(exc)
+        if codigo == "23505":  # unique_violation
+            raise ConflictoError(
+                f"Ya existe un registro de {self.entidad} con esos datos únicos."
+            ) from exc
+        if codigo == "23503":  # foreign_key_violation
+            raise ReferenciaInvalidaError(
+                "Alguna de las referencias enviadas no existe."
+            ) from exc
+        if codigo in ("23502", "23514"):  # not_null / check_violation
+            raise ReferenciaInvalidaError(
+                "Los datos enviados no cumplen una restricción de la base."
+            ) from exc
+        raise exc
 
     @staticmethod
     def columna(atributo: InstrumentedAttribute) -> str:

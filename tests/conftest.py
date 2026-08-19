@@ -49,8 +49,13 @@ URL_TEST = _url_de_test()
 os.environ["DATABASE_URL"] = URL_TEST
 
 TABLAS = [
+    "venta_lote",
+    "venta_detalle",
+    "ventas",
+    "tipo_comprobante",
     "recepcion_detalle",
     "recepcion",
+    "facturas",
     "guia_remision_detalle",
     "producto_lote",
     "orden_compra_detalle",
@@ -132,6 +137,61 @@ def _preparar_bd() -> None:
     _migrar()
 
 
+async def _soltar_conexiones_colgadas(engine) -> None:
+    """Corta las conexiones a la BD de test que quedaron dentro de una
+    transacción abierta.
+
+    `TRUNCATE` pide `AccessExclusiveLock` sobre cada tabla. Una conexión
+    `idle in transaction` sigue sosteniendo los locks de lectura que tomó, así
+    que las dos se esperan y PostgreSQL corta la suite con un deadlock —y los
+    fallos aparecen en tests que no tienen nada que ver con la causa—.
+
+    Esas conexiones son siempre basura. La suite corre en un solo proceso y de
+    a un test por vez —se comprobó muestreando `pg_stat_activity`: nunca hay
+    más de una conexión viva—, así que en este punto, con el pool propio ya
+    cerrado, cualquier otra conexión a la BD de test sobra: quedó de una
+    corrida interrumpida o de una sesión que no se devolvió al pool. No se
+    filtra por `state` porque la que bloquea no siempre está ociosa; a veces
+    está a mitad de una consulta, y esa es justamente la que traba el
+    `TRUNCATE`.
+
+    El precio de equivocarse es bajo y el de no hacerlo, alto: si alguien
+    corriera dos suites a la vez contra la misma base se cortarían entre sí,
+    pero eso ya estaba roto —se truncan las tablas la una a la otra—.
+
+    Va en su **propia** conexión, que se abre y se cierra antes de que exista
+    la del `TRUNCATE`. Hacerlo dentro de esa misma transacción se veía correcto
+    —`pid <> pg_backend_pid()` excluye la propia— pero terminaba matando la
+    conexión que estaba por truncar: el `TRUNCATE` moría con "connection was
+    closed in the middle of operation". Si la conexión a proteger todavía no
+    existe, no hay forma de matarla.
+
+    Si el usuario de la base no tiene permiso para señalar backends, se sigue
+    igual: es una limpieza defensiva, no un requisito para correr los tests.
+    """
+    import contextlib
+
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+
+    with contextlib.suppress(SQLAlchemyError):
+        async with engine.connect() as conexion:
+            await conexion.execute(
+                text(
+                    """
+                    SELECT pg_terminate_backend(pid)
+                      FROM pg_stat_activity
+                     WHERE datname = current_database()
+                       AND pid <> pg_backend_pid()
+                    """
+                )
+            )
+    # La conexión que acaba de usarse vuelve al pool, y las que se cortaron
+    # pueden haber dejado ahí sockets muertos: se vacía otra vez para que el
+    # `TRUNCATE` estrene una conexión sana.
+    await engine.dispose()
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def _limpiar_tablas(_preparar_bd) -> AsyncGenerator[None, None]:
     """Cada test arranca con la base vacía, salvo los estados canónicos.
@@ -149,7 +209,16 @@ async def _limpiar_tablas(_preparar_bd) -> AsyncGenerator[None, None]:
     from app.db.session import engine
     from app.modules.movimientos.constantes import ESTADOS_CANONICOS
 
+    # El pool propio se cierra antes de truncar: son conexiones nuestras y
+    # devolverlas es gratis.
+    await engine.dispose()
+    await _soltar_conexiones_colgadas(engine)
+
     async with engine.begin() as conexion:
+        # Si aun así algo bloquea, es mejor fallar en cinco segundos con un
+        # error que nombra el lock que quedarse esperando: el deadlock salía
+        # como fallos repartidos por archivos que no tenían nada que ver.
+        await conexion.execute(text("SET LOCAL lock_timeout = '5s'"))
         await conexion.execute(
             text("TRUNCATE TABLE " + ", ".join(TABLAS) + " RESTART IDENTITY CASCADE")
         )
@@ -161,8 +230,16 @@ async def _limpiar_tablas(_preparar_bd) -> AsyncGenerator[None, None]:
 
 
 @pytest_asyncio.fixture
-async def cliente() -> AsyncGenerator[httpx.AsyncClient, None]:
-    """Cliente HTTP contra la app en memoria (sin levantar un servidor)."""
+async def cliente(_limpiar_tablas) -> AsyncGenerator[httpx.AsyncClient, None]:
+    """Cliente HTTP contra la app en memoria (sin levantar un servidor).
+
+    Depende de `_limpiar_tablas` por el mismo motivo que `catalogo`: pytest no
+    garantiza el orden entre una fixture autouse y otra que no la declara, así
+    que el truncado podía correr después de que el test ya hubiera creado sus
+    datos. Con pocos tests casi nunca pasaba; al crecer la suite empezó a
+    aparecer como filas que se creaban con 201 y al request siguiente ya no
+    existían.
+    """
     # `app` se importa acá y no arriba: al importarse lee la configuración, y
     # `DATABASE_URL` se fija más arriba en este mismo módulo. `httpx` no tiene
     # esa restricción y va con el resto de imports, que además es lo que hace

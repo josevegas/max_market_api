@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ReferenciaInvalidaError
+from app.core.exceptions import ConflictoError, ReferenciaInvalidaError
 from app.modules.unidades.models.tabla_equivalencia import TablaEquivalencia
 from app.modules.unidades.models.unidad_medida import UnidadMedida
 
@@ -52,3 +52,26 @@ async def a_unidades_minimas(
 ) -> int:
     """`cantidad` expresada en la unidad mínima."""
     return cantidad * await factor_de(db, unidad_medida_id)
+
+
+async def a_unidad(
+    db: AsyncSession, cantidad: int, desde_id: UUID, hasta_id: UUID
+) -> int:
+    """`cantidad` reexpresada en otra unidad, pasando por la mínima.
+
+    Corta si la conversión no da exacta: 5 unidades sueltas no son "media caja
+    de 12", y redondear haría aparecer o desaparecer mercadería en silencio,
+    que es justo lo que el resto del módulo se ocupa de impedir.
+    """
+    if desde_id == hasta_id:
+        return cantidad
+
+    minimas = await a_unidades_minimas(db, cantidad, desde_id)
+    factor = await factor_de(db, hasta_id)
+    if minimas % factor:
+        raise ConflictoError(
+            f"{cantidad} no se puede expresar en la unidad de destino: son "
+            f"{minimas} unidades mínimas y esa unidad vale {factor}. Ajuste la "
+            "cantidad o registre el movimiento en otra unidad."
+        )
+    return minimas // factor

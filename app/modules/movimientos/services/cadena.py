@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crud import CRUDService, ModeloT
 from app.core.exceptions import ConflictoError, ReferenciaInvalidaError
-from app.modules.movimientos.constantes import CODIGO_APROBADO
+from app.modules.movimientos.constantes import CODIGO_APROBADO, CODIGO_PENDIENTE
 from app.modules.movimientos.models.estado import Estado
 
 
@@ -50,6 +50,28 @@ async def id_de_codigo(db: AsyncSession, codigo: str) -> UUID:
             "que la cadena de compras necesita para operar."
         )
     return estado_id
+
+
+class NaceEnPendiente(CRUDService[ModeloT]):
+    """El documento que se crea sin estado nace pendiente.
+
+    `PEN` no puede ser un `default` de columna: lo que la columna guarda es el
+    id de una fila de `estados`, y ese id solo se conoce consultando la base.
+    Tampoco puede ser `nullable`: un documento sin estado no está pendiente ni
+    aprobado, y la cadena entera decide mirando ese campo.
+
+    Va acá y no repetido en cada servicio por lo mismo que la regla del padre
+    aprobado: cinco copias de la misma línea acaban diciendo cosas distintas.
+    La recepción queda fuera a propósito —nace `RECEPCIONADO`, no pendiente— y
+    resuelve lo suyo en `RecepcionService.crear`.
+    """
+
+    async def crear(self, datos: BaseModel, usuario_id: UUID | None = None) -> ModeloT:
+        if getattr(datos, "estado_id", None) is None:
+            datos = datos.model_copy(
+                update={"estado_id": await id_de_codigo(self.db, CODIGO_PENDIENTE)}
+            )
+        return await super().crear(datos, usuario_id)
 
 
 class DocumentoEncadenadoService(CRUDService[ModeloT]):

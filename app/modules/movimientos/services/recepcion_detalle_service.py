@@ -8,6 +8,10 @@ documental y el descuadre no aparecería hasta el inventario.
 Se compara **en unidad mínima**, como en `GuiaRemisionDetalleService`: la guía
 puede venir en cajas y la recepción en unidades sueltas, y comparar los números
 en crudo daría por buenas 12 cajas contra 12 unidades.
+
+Y lo que se recibe **entra al stock**: cada línea alimenta el lote de su almacén
+(ver `stock_service`). Antes eran dos actos separados —recibir y cargar el
+lote a mano— y nada garantizaba que dijeran lo mismo.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from sqlalchemy import func, select
 
 from app.core.crud import CRUDService
 from app.core.exceptions import ConflictoError, ReferenciaInvalidaError
+from app.modules.almacenes.services.stock_service import sincronizar_desde_linea
 from app.modules.movimientos.models.guia_remision_detalle import GuiaRemisionDetalle
 from app.modules.movimientos.models.recepcion import Recepcion
 from app.modules.movimientos.models.recepcion_detalle import RecepcionDetalle
@@ -43,7 +48,12 @@ class RecepcionDetalleService(CRUDService[RecepcionDetalle]):
             valores.get("cantidad_ingresada", 0),
             valores["unidad_medida_id"],
         )
-        return await super().crear(datos, usuario_id)
+        # El stock entra en la misma transacción que la línea: si el lote
+        # fallara, la recepción no puede quedar registrada como hecha.
+        linea = await self._crear_sin_guardar(datos, usuario_id)
+        await self._sincronizar_stock(linea, usuario_id)
+        await self._guardar(linea)
+        return linea
 
     async def actualizar(
         self, registro_id: UUID, datos: BaseModel, usuario_id: UUID | None = None
@@ -57,7 +67,38 @@ class RecepcionDetalleService(CRUDService[RecepcionDetalle]):
             cambios.get("unidad_medida_id", linea.unidad_medida_id),
             excluir_id=linea.id,
         )
-        return await super().actualizar(registro_id, datos, usuario_id)
+        # El lote de antes también se recalcula: si la edición mueve la línea a
+        # otro código de lote o a otro producto, el stock que dejó atrás tiene
+        # que bajar. Sin esto la mercadería quedaría contada dos veces.
+        anterior = (linea.recepcion_id, linea.producto_id, linea.codigo_lote)
+        actualizada = await self._aplicar_cambios(registro_id, datos, usuario_id)
+        await self._sincronizar_stock(actualizada, usuario_id, ademas=anterior)
+        await self._guardar(actualizada)
+        return actualizada
+
+    async def desactivar(
+        self, registro_id: UUID, usuario_id: UUID | None = None
+    ) -> RecepcionDetalle:
+        """Dar de baja la línea saca del stock lo que había ingresado."""
+        linea = await self._desactivar_sin_guardar(registro_id, usuario_id)
+        await self._sincronizar_stock(linea, usuario_id)
+        await self._guardar(linea)
+        return linea
+
+    async def _sincronizar_stock(
+        self,
+        linea: RecepcionDetalle,
+        usuario_id: UUID | None,
+        ademas: tuple[UUID, UUID, str | None] | None = None,
+    ) -> None:
+        """Recalcula el lote de la línea, y el que haya dejado atrás."""
+        objetivos = {(linea.recepcion_id, linea.producto_id, linea.codigo_lote)}
+        if ademas is not None:
+            objetivos.add(ademas)
+        for recepcion_id, producto_id, codigo in objetivos:
+            await sincronizar_desde_linea(
+                self.db, recepcion_id, producto_id, codigo, usuario_id
+            )
 
     async def _validar_contra_guia(
         self,

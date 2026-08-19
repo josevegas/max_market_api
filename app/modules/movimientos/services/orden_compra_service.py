@@ -7,12 +7,17 @@ from app.modules.movimientos.models.guia_remision import GuiaRemision
 from app.modules.movimientos.models.guia_remision_detalle import GuiaRemisionDetalle
 from app.modules.movimientos.models.orden_compra import OrdenCompra
 from app.modules.movimientos.models.orden_compra_detalle import OrdenCompraDetalle
-from app.modules.movimientos.services.cadena import DocumentoEncadenadoService
+from app.modules.movimientos.services.cadena import (
+    DocumentoEncadenadoService,
+    NaceEnPendiente,
+)
 from app.modules.movimientos.services.generacion import GeneraSucesorAlAprobar
 
 
 class OrdenCompraService(
-    GeneraSucesorAlAprobar[OrdenCompra], DocumentoEncadenadoService[OrdenCompra]
+    NaceEnPendiente[OrdenCompra],
+    GeneraSucesorAlAprobar[OrdenCompra],
+    DocumentoEncadenadoService[OrdenCompra],
 ):
     """La orden se emite contra la cotización que se aprobó, y solo esa.
 

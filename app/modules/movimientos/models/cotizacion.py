@@ -35,6 +35,15 @@ class Cotizacion(Base, AuditMixin):
         Numeric(12, 2), nullable=False, default=0
     )
     tiempo_atencion: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
+    #: Días de crédito que ofrece el proveedor: 0 es contado, 30 es a 30 días.
+    #:
+    #: NOT NULL con default 0 y no nullable a propósito: el comparativo puntúa
+    #: este campo, y un nulo tendría que decidir si vale como contado o como
+    #: "sin dato". Con 0 la cotización que nadie completó queda en el peor caso
+    #: para el proveedor, que es lo contrario de premiar el dato faltante.
+    condicion_pago_dias: Mapped[int] = mapped_column(
+        Integer(), nullable=False, default=0, server_default=text("0")
+    )
     fecha: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
     estado_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True),

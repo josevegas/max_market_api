@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Integer,
@@ -61,7 +62,16 @@ class ProductoAlmacen(Base, AuditMixin):
     )
     stock_minimo: Mapped[int] = mapped_column(Integer(), nullable=False, default=1)
     stock_maximo: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    #: Lo calcula el stock: sale del lote más caro que quede con existencias,
+    #: para no vender por debajo de lo que costó la partida que todavía está en
+    #: el almacén.
     precio_venta_tienda: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    #: Cuando alguien lo fija a mano, la sincronización deja de pisarlo. Sin
+    #: esta marca no habría forma de distinguir un precio decidido por la
+    #: tienda —una promoción— de uno que quedó viejo.
+    precio_manual: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default=text("false")
+    )
     estado: Mapped[str] = mapped_column(
         String(50), nullable=False, default="disponible"
     )

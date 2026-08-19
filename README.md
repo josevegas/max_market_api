@@ -18,6 +18,14 @@ uvicorn app.main:app --reload
 - Documentación interactiva: http://localhost:8000/docs
 - Chequeo de vida: http://localhost:8000/salud
 
+## El negocio
+
+[`docs/flujo-del-negocio.md`](docs/flujo-del-negocio.md) — cómo se encadenan los
+seis documentos de compra, cómo la recepción crea el stock, de dónde sale cada
+uno de los dos precios de venta y qué falta para operar un market. El *por qué*
+de cada regla vive en el docstring del módulo que la implementa; ese documento
+es el mapa que ninguno puede dar por sí solo.
+
 ## Estructura
 
 ```

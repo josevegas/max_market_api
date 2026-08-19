@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import AliasChoices, Field, field_validator
@@ -51,6 +52,16 @@ class Settings(BaseSettings):
     URL_PADRON_PERCEPCION: str = (
         "https://ww1.sunat.gob.pe/descarga/AgentRet/AgenPercVI_TXT.zip"
     )
+
+    # ── Precios ─────────────────────────────────────────────────────────────
+    #: IGV vigente, **como factor**: 18% se escribe 1.18. Va acá y no como
+    #: constante en el código porque la tasa cambia por ley, y el día que
+    #: cambie no se puede depender de un despliegue para corregir los precios.
+    IGV: Decimal = Decimal("1.18")
+    #: Recargo fijo por operación en punto de venta. Entra al precio antes del
+    #: IGV, así que también tributa. Cero por defecto: es una decisión
+    #: comercial de cada instalación, no un supuesto que la API pueda hacer.
+    MONTO_POS: Decimal = Decimal("0")
 
     # ── Aplicación ──────────────────────────────────────────────────────────
     APP_NAME: str = "Max Market API"
